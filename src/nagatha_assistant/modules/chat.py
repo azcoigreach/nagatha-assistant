@@ -2,16 +2,17 @@
 Chat session management: start sessions, send messages via OpenAI, and persist history.
 """
 import os
-import openai
+import asyncio
 from dotenv import load_dotenv
 from typing import List, Dict
 from sqlalchemy import select
-
-from sqlalchemy import select
+from openai import AsyncOpenAI
 from nagatha_assistant.db import engine, SessionLocal
 from nagatha_assistant.db_models import ConversationSession, Message
 
 load_dotenv()
+# Instantiate a single AsyncOpenAI client
+client = AsyncOpenAI()
 
 async def init_db() -> None:
     """
@@ -66,9 +67,8 @@ async def send_message(
     Send a user message to the OpenAI ChatCompletion API, store the user and assistant messages,
     and return the assistant's reply.
     """
-    # Prepare model and API key
+    # Prepare model name
     model_name = model or os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
-    openai.api_key = os.getenv("OPENAI_API_KEY")
 
     # Load history
     history = []
@@ -79,13 +79,18 @@ async def send_message(
     # Append user message
     history.append({"role": "user", "content": user_message})
 
-    # Call OpenAI
-    response = await openai.ChatCompletion.acreate(
+    # Call OpenAI via AsyncOpenAI client
+    response = await client.chat.completions.create(
         model=model_name,
         messages=history
     )
-    # Extract assistant reply
-    assistant_msg = response.choices[0].message["content"]
+    # Extract assistant reply (handle both dict and resource objects)
+    choice_msg = response.choices[0].message
+    if isinstance(choice_msg, dict):  # test mocks may use dict
+        assistant_msg = choice_msg["content"]
+    else:
+        # resource object has attribute .content
+        assistant_msg = choice_msg.content
 
     # Store messages
     async with SessionLocal() as session:
