@@ -11,6 +11,8 @@ Key features
 - Plugin System: dynamic discovery and management of feature plugins
 - Integrations: (planned) connect with Obsidian and other services
 
+Key Features (DB & Chat)
+- AI Chat: interactive chat sessions with LLM (OpenAI), with persistent session history
 Architecture
 ------------
 The source code is organized under `src/nagatha_assistant/`:
@@ -75,7 +77,18 @@ Prerequisites:
 5. Start the CLI:
 
    ```
-   .venv/bin/python -m nagatha_assistant.cli run
+   .venv/bin/nagatha_assistant.cli run    # launches Textual UI
+   # or use console script:
+   nagatha run
+   ```
+
+Chat via CLI:
+
+   ```
+   nagatha chat new                     # create new session
+   nagatha chat list                    # list sessions
+   nagatha chat history <session_id>    # show session history
+   nagatha chat send <session_id> "Hello"
    ```
 
 Configuration
