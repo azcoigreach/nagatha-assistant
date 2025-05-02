@@ -32,15 +32,18 @@ class ChatApp(App):
     async def on_mount(self) -> None:
         # Initialize a new chat session
         self.session_id = await start_session()
-        # Create UI
-        await self.view.dock(Header(), edge="top")
-        await self.view.dock(Footer(), edge="bottom")
+        # Create UI components
+        header = Header()
+        footer = Footer()
         # Use RichLog for scrollable display
         self.chat_log = RichLog(id="chat_log")
         self.chat_input = Input(placeholder="Type message and press Enter", id="chat_input")
-        await self.view.dock(self.chat_log, edge="left")
-        await self.view.dock(self.chat_input, edge="bottom")
-        # Load any existing messages (should be none)
+        # Mount widgets vertically: header, chat log, input, footer
+        await self.mount(header)
+        await self.mount(self.chat_log)
+        await self.mount(self.chat_input)
+        await self.mount(footer)
+        # Load any existing messages (should be none initially)
         history = await get_messages(self.session_id)
         for m in history:
             self.chat_log.write(f"[{m.timestamp}] {m.role}: {m.content}")

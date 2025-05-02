@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 venv/
 .venv/
-nagatha.log
+*.log
 .pytest_cache/
 .DS_Store
+*.egg-info/
+*.db
