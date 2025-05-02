@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+nagatha.log
+.pytest_cache/
+.DS_Store

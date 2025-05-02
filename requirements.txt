@@ -1,0 +1,10 @@
+ click
+ python-dotenv
+ openai
+ textual
+ pytest
+ pytest-asyncio
+ rich
+SQLAlchemy
+alembic
+aiosqlite
