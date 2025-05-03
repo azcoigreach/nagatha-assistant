@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from functools import lru_cache
-import concurrent.futures, asyncio, logging, pathlib
+import concurrent.futures, asyncio, logging, pathlib, threading
 
 
 # Load environment variables
@@ -32,6 +32,9 @@ Base = declarative_base()
 # Import models so they are registered with Base.metadata
 import nagatha_assistant.db_models  # noqa: F401
 
+# Lock to ensure Alembic migrations are executed only once at a time
+_LOCK = threading.Lock()
+
 # ---------------------------------------------------------------------------
 # Alembic helper – ensure DB schema is up-to-date
 # ---------------------------------------------------------------------------
@@ -58,7 +61,14 @@ def _migration_runner() -> None:
         # Override DB URL
         cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
 
-        command.upgrade(cfg, "head")
+        try:
+            command.upgrade(cfg, "head")
+        except Exception as exc:  # noqa: BLE001
+            # If tables already exist (e.g. tests ran concurrently), ignore.
+            if "already exists" in str(exc):
+                logging.getLogger(__name__).debug("Schema already present, skip")
+            else:
+                raise
     except ModuleNotFoundError:
         # Alembic not installed in minimal environments (e.g. CI tests). Fall
         # back to metadata.create_all as before.
@@ -74,5 +84,12 @@ def _migration_runner() -> None:
 
 
 async def ensure_schema() -> None:
+    # Serialise access so migrations are only run once even if multiple
+    # coroutines hit this function concurrently (e.g. pytest workers).
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, _migration_runner)
+
+    def runner():  # noqa: D401
+        with _LOCK:
+            _migration_runner()
+
+    await loop.run_in_executor(None, runner)

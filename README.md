@@ -141,6 +141,32 @@ Environment variables are loaded via `python-dotenv`. Key vars:
   to include as context (overridable per-run via CLI/UI). 0 = disabled.
 - `OPENAI_MODEL`: default chat model (e.g. `gpt-3.5-turbo`)
 - `NAGATHA_USAGE_FILE`: override path for cumulative usage JSON (optional)
+- `DATABASE_URL`: SQLAlchemy URL (SQLite default). Alembic migrations use the
+  same value during `alembic upgrade head`.
+
+Database migrations (Alembic)
+-----------------------------
+We’ve migrated from programmatic `Base.metadata.create_all()` to proper schema
+versioning with Alembic.
+
+1. The initial schema is captured in `migrations/versions/0001_initial.py`.
+2. `src/nagatha_assistant/db.ensure_schema()` runs **once per process** and
+   calls `alembic upgrade head` programmatically (falling back to
+   `create_all()` if Alembic isn’t installed).
+3. All code paths that need a database now `await ensure_schema()` (e.g.
+   `modules/chat.init_db`).
+
+Developer workflow:
+
+```bash
+# autogenerate after editing models
+alembic revision --autogenerate -m "add foo column"
+
+# apply latest
+alembic upgrade head
+```
+
+Alembic picks up `DATABASE_URL` from the environment if set.
 
 
 Logging & Telemetry

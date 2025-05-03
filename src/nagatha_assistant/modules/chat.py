@@ -19,7 +19,7 @@ except ModuleNotFoundError:
     pass
 from sqlalchemy import select
 from openai import AsyncOpenAI
-from nagatha_assistant.db import engine, SessionLocal
+from nagatha_assistant.db import SessionLocal, ensure_schema
 from nagatha_assistant.db_models import ConversationSession, Message
 from nagatha_assistant.utils.usage_tracker import record_usage
 
@@ -53,11 +53,8 @@ async def init_db() -> None:
     """
     Initialize database schema (create tables).
     """
-    async with engine.begin() as conn:
-        # import Base here to ensure metadata includes models
-        from nagatha_assistant.db import Base
-
-        await conn.run_sync(Base.metadata.create_all)
+    # Use Alembic-driven migrations
+    await ensure_schema()
 
 async def start_session() -> int:
     """
