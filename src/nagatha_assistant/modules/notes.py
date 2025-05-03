@@ -4,6 +4,7 @@ Notes module – functions to create, retrieve, and search notes with tags.
 from typing import List, Optional, Dict, Any
 
 from sqlalchemy import select, or_, distinct
+from sqlalchemy.orm import joinedload
 from nagatha_assistant.db import ensure_schema, SessionLocal
 from nagatha_assistant.db_models import Note, Tag
 
@@ -18,11 +19,10 @@ async def take_note(
     # Ensure DB schema is up-to-date
     await ensure_schema()
     async with SessionLocal() as session:
-        note = Note(title=title, content=content)
-        # Handle tags
+        # Prepare tag objects
+        tag_objs = []
         if tags:
             for tag_name in tags:
-                # find existing tag or create new
                 result = await session.execute(
                     select(Tag).where(Tag.name == tag_name)
                 )
@@ -31,7 +31,9 @@ async def take_note(
                     tag = Tag(name=tag_name)
                     session.add(tag)
                     await session.flush()
-                note.tags.append(tag)
+                tag_objs.append(tag)
+        # Create note with associated tags
+        note = Note(title=title, content=content, tags=tag_objs)
         session.add(note)
         await session.commit()
         await session.refresh(note)
@@ -44,7 +46,8 @@ async def get_note(note_id: int) -> Optional[Dict[str, Any]]:
     """
     await ensure_schema()
     async with SessionLocal() as session:
-        result = await session.execute(select(Note).where(Note.id == note_id))
+        stmt = select(Note).options(joinedload(Note.tags)).where(Note.id == note_id)
+        result = await session.execute(stmt)
         note = result.scalars().first()
         if not note:
             return None
@@ -67,7 +70,8 @@ async def search_notes(
     """
     await ensure_schema()
     async with SessionLocal() as session:
-        stmt = select(distinct(Note)).select_from(Note)
+        # Start from Note with distinct to avoid duplicates when joining tags
+        stmt = select(Note).distinct().options(joinedload(Note.tags))
         # Join tags if filtering by tags
         if tags:
             stmt = stmt.join(Note.tags).where(Tag.name.in_(tags))
@@ -78,9 +82,10 @@ async def search_notes(
                 or_(Note.title.ilike(pattern), Note.content.ilike(pattern))
             )
         result = await session.execute(stmt)
-        notes = result.scalars().all()
+        # Deduplicate in case of multiple tag matches
+        note_objs = result.unique().scalars().all()
         output: List[Dict[str, Any]] = []
-        for note in notes:
+        for note in note_objs:
             output.append({
                 "id": note.id,
                 "title": note.title,
