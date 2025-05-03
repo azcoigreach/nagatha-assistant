@@ -41,3 +41,7 @@ async def test_web_search_plugin(monkeypatch):
     # Should contain bullet points and summaries
     assert "1. Foo" in result
     assert "summary of https://example.com/foo" in result
+
+    # Also test fetch_page directly
+    page = await pm.call_function("fetch_page", {"url": "https://example.com/foo", "max_chars": 50})
+    assert page.startswith("summary of https://example.com/foo")
