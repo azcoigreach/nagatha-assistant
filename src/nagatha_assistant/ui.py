@@ -2,11 +2,21 @@
 Textual UI for Nagatha Assistant chat.
 """
 import asyncio
+import os
+import sys
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, RichLog, Input
 from textual.containers import Container
 
 from nagatha_assistant.modules.chat import start_session, send_message, get_messages
+from nagatha_assistant.utils.logger import setup_logger
+
+# Use the shared logger setup and disable console output
+logger = setup_logger("ui", disable_console=True)
+
+# Redirect standard output and error to null when the UI is running
+# sys.stdout = open(os.devnull, 'w')
+# sys.stderr = open(os.devnull, 'w')
 
 
 class ChatApp(App):
@@ -35,8 +45,8 @@ class ChatApp(App):
         # Create UI components
         header = Header()
         footer = Footer()
-        # Use RichLog for scrollable display
-        self.chat_log = RichLog(id="chat_log")
+        # Use RichLog for scrollable display, but isolate it from logging
+        self.chat_log = RichLog(id="chat_log", wrap=True, highlight=False)
         self.chat_input = Input(placeholder="Type message and press Enter", id="chat_input")
         # Mount widgets vertically: header, chat log, input, footer
         await self.mount(header)
@@ -46,7 +56,11 @@ class ChatApp(App):
         # Load any existing messages (should be none initially)
         history = await get_messages(self.session_id)
         for m in history:
-            self.chat_log.write(f"[{m.timestamp}] {m.role}: {m.content}")
+            if m.role in ["user", "assistant"]:  # Only display chat messages
+                self.chat_log.write(f"[{m.timestamp}] {m.role}: {m.content}")
+
+        # Ensure the logger does not propagate to the RichLog
+        logger.propagate = False
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         user_text = event.value

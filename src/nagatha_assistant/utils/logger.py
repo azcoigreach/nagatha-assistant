@@ -3,7 +3,10 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 
-def setup_logger(name: str = __name__) -> logging.Logger:
+def setup_logger(
+    name: str = __name__,
+    disable_console: bool = False,
+) -> logging.Logger:
     """
     Set up logging with RotatingFileHandler.
     """
@@ -23,5 +26,21 @@ def setup_logger(name: str = __name__) -> logging.Logger:
     )
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+
+    # Ensure the root logger does not output to the console
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    # Add the RotatingFileHandler to the root logger
+    logging.root.addHandler(handler)
+    logging.root.setLevel(logger.level)
+
+    # Disable console output for all loggers if requested
+    if disable_console:
+        logging.root.handlers = [
+            h
+            for h in logging.root.handlers
+            if not isinstance(h, logging.StreamHandler)
+        ]
 
     return logger
