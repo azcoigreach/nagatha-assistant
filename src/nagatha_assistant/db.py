@@ -69,11 +69,11 @@ def _migration_runner() -> None:
             command.upgrade(cfg, "head")
         except Exception as exc:  # noqa: BLE001
             if "already exists" in str(exc):
-                logging.getLogger(__name__).debug("Schema already present, skip Alembic upgrade")
+                logging.getLogger().debug("Schema already present, skip Alembic upgrade")
             else:
                 raise
     except ModuleNotFoundError:
-        logging.getLogger(__name__).warning(
+        logging.getLogger().warning(
             "Alembic not installed – falling back to metadata.create_all()"
         )
 

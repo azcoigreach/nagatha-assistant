@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import MutableMapping
 
 
-_log = logging.getLogger(__name__)
+_log = logging.getLogger()
 
 # ---------------------------------------------------------------------------
 # Pricing table

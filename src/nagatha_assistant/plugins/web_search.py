@@ -27,7 +27,7 @@ from bs4 import BeautifulSoup  # type: ignore
 from nagatha_assistant.core.plugin import Plugin
 
 
-_log = logging.getLogger(__name__)
+logging = logging.getLogger()
 
 
 SEARX_URL = "https://search.stranger.social"  # production instance
@@ -92,9 +92,12 @@ class WebSearchPlugin(Plugin):
 
     async def call(self, name: str, arguments: Dict[str, Any]) -> str:  # noqa: D401
         if name == "web_search":
+            logging.debug("WebSearchPlugin called with name='%s' and arguments=%s", name, arguments)
             return await self._handle_search(arguments)
         if name == "fetch_page":
+            logging.debug("WebSearchPlugin called with name='%s' and arguments=%s", name, arguments)
             return await self._handle_fetch(arguments)
+        logging.error("WebSearchPlugin can only handle 'web_search' and 'fetch_page', not %s", name)
         raise ValueError(f"WebSearchPlugin cannot handle function {name}")
 
     # ------------------------------------------------------------------
@@ -106,7 +109,7 @@ class WebSearchPlugin(Plugin):
         num_results: int = int(args.get("num_results", 3))
         follow: bool = bool(args.get("follow", True))
 
-        _log.info("Search '%s' (num_results=%s, follow=%s)", query, num_results, follow)
+        logging.info("Search '%s' (num_results=%s, follow=%s)", query, num_results, follow)
 
         results = await self._search_searx(query, num_results)
 
@@ -152,7 +155,7 @@ class WebSearchPlugin(Plugin):
             async with self._session.get(url, timeout=10) as resp:
                 html = await resp.text(errors="ignore")
         except Exception as exc:  # noqa: BLE001
-            _log.warning("Failed to fetch %s: %s", url, exc)
+            logging.warning("Failed to fetch %s: %s", url, exc)
             return f"Could not fetch {url}"
 
         text = self._extract_text(html)

@@ -39,7 +39,7 @@ async def _ensure_plugins_ready() -> PluginManager:
         # Make sure logging is configured so plugin discovery emits records.
         from nagatha_assistant.utils.logger import setup_logger
 
-        setup_logger(__name__)
+        setup_logger()
 
         _plugin_manager = PluginManager()
         await _plugin_manager.discover()
