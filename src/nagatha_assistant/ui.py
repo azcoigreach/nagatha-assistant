@@ -23,6 +23,12 @@ from nagatha_assistant.utils.logger import setup_logger
 
 # Use the shared logger setup and disable console output
 logger = setup_logger("ui", disable_console=True)
+# Ensure root logger level honours LOG_LEVEL env-var even when UI is launched
+# directly (i.e. not via the CLI entry-point which already does this).
+import logging, os
+
+root_level_name = os.getenv("LOG_LEVEL", "WARNING").upper()
+logging.root.setLevel(getattr(logging, root_level_name, logging.WARNING))
 
 # Redirect standard output and error to null when the UI is running
 # sys.stdout = open(os.devnull, 'w')
