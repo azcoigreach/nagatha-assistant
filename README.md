@@ -4,7 +4,7 @@ nagatha-assistant is a personal AI agent/assistant built in Python. It leverages
 
 Key features
 ------------
-- Note-taking: capture and persist user notes
+- Note-taking: capture and persist user notes in Markdown with titles, tags, and full-text search
 - Audio transcription: convert audio files into text
 - Task management: add, list, and track tasks
 - Reminders & notifications: schedule and trigger reminders
