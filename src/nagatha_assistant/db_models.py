@@ -6,6 +6,16 @@ from sqlalchemy.orm import relationship
 
 from nagatha_assistant.db import Base
 
+# Association table for many-to-many relationship between notes and tags
+from sqlalchemy import Table
+
+note_tags = Table(
+    "note_tags",
+    Base.metadata,
+    Column("note_id", Integer, ForeignKey("notes.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+)
+
 
 class ConversationSession(Base):
     """
@@ -31,3 +41,37 @@ class Message(Base):
     timestamp = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     session = relationship("ConversationSession", back_populates="messages")
+    
+# ---------------------------------------------------------------------------
+# Notes and Tags models
+# ---------------------------------------------------------------------------
+class Tag(Base):
+    __tablename__ = "tags"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), unique=True, nullable=False, index=True)
+    notes = relationship(
+        "Note",
+        secondary=note_tags,
+        back_populates="tags",
+        cascade="all",
+    )
+
+class Note(Base):
+    __tablename__ = "notes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    tags = relationship(
+        "Tag",
+        secondary=note_tags,
+        back_populates="notes",
+    )
