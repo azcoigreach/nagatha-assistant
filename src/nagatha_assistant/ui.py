@@ -77,6 +77,12 @@ class ChatApp(App):
         await self._render_history()
         self._print_help()
 
+        # Pre-load plugins so discovery logs are emitted immediately and tools
+        # are ready for the first user interaction.
+        from nagatha_assistant.modules.chat import _ensure_plugins_ready  # noqa: WPS433
+
+        await _ensure_plugins_ready()
+
         # Prevent log propagation into RichLog
         logger.propagate = False
 
