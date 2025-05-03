@@ -18,7 +18,8 @@ Key features
   callable *functions*; the chat agent can invoke these at runtime via the
   OpenAI function-calling interface.
 - Web search plugin: allows the agent to query the internet via SearXNG and
-  summarise findings, with transparent citation of sources.
+-  summarise findings, with transparent citation of sources.
+- Time retrieval plugin: fetch the current date and time from NIST time server (time.nist.gov) and return it in the specified timezone (default MST).
 
 Key Features (DB & Chat)
 - AI Chat: interactive chat sessions with LLM (OpenAI), with persistent session history
@@ -37,7 +38,9 @@ src/nagatha_assistant/
 │   ├── tasks.py
 │   └── reminders.py
 ├── plugins/               # Plugin modules for custom features
-│   └── (template plugin files)
+│   ├── echo.py            # EchoPlugin (v0.1.0)
+│   ├── web_search.py      # WebSearchPlugin (v0.1.0)
+│   └── nist_time.py       # NistTimePlugin (v0.1.0)
 ├── integrations/          # Third-party service integrations (e.g. Obsidian)
 │   └── obsidian.py
 └── utils/                 # Utilities (logging, helpers)

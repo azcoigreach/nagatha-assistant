@@ -4,6 +4,14 @@ Nagatha can be extended at runtime via *plugins*.  A plugin is a Python module
 living in `src/nagatha_assistant/plugins/` that subclasses
 `nagatha_assistant.core.plugin.Plugin`.
 
+Built-in Plugins
+----------------
+Out of the box, Nagatha includes the following plugins:
+
+- **echo**: returns the same text that was passed in.
+- **web_search**: performs internet searches via SearXNG and summarises the top results.
+- **nist_time**: fetches the current date and time from the NIST time server (time.nist.gov) with optional timezone conversion.
+
 Why plugins?
 • Cleanly isolate feature code from the chat core.
 • Let the LLM call functions (OpenAI *tools* API) without shipping every tool
