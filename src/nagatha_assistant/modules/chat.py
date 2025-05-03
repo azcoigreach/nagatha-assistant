@@ -36,6 +36,11 @@ _plugin_manager: PluginManager | None = None
 async def _ensure_plugins_ready() -> PluginManager:
     global _plugin_manager
     if _plugin_manager is None:
+        # Make sure logging is configured so plugin discovery emits records.
+        from nagatha_assistant.utils.logger import setup_logger
+
+        setup_logger()
+
         _plugin_manager = PluginManager()
         await _plugin_manager.discover()
         await _plugin_manager.setup_all({})  # No config for now
