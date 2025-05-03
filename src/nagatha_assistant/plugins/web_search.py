@@ -62,10 +62,26 @@ class WebSearchPlugin(Plugin):
                         },
                         "follow": {
                             "type": "boolean",
-                            "description": "whether to fetch the result pages for summaries",
+                            "description": "whether to fetch the result pages for summaries (default true)",
                         },
                     },
                     "required": ["query"],
+                },
+            }
+            ,
+            {
+                "name": "fetch_page",
+                "description": "Download the web page at the given URL and return a concise text summary.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "https://…"},
+                        "max_chars": {
+                            "type": "integer",
+                            "description": "maximum characters in summary (default 500)",
+                        },
+                    },
+                    "required": ["url"],
                 },
             }
         ]
@@ -77,6 +93,8 @@ class WebSearchPlugin(Plugin):
     async def call(self, name: str, arguments: Dict[str, Any]) -> str:  # noqa: D401
         if name == "web_search":
             return await self._handle_search(arguments)
+        if name == "fetch_page":
+            return await self._handle_fetch(arguments)
         raise ValueError(f"WebSearchPlugin cannot handle function {name}")
 
     # ------------------------------------------------------------------
@@ -86,7 +104,7 @@ class WebSearchPlugin(Plugin):
     async def _handle_search(self, args: Dict[str, Any]) -> str:
         query: str = args["query"]
         num_results: int = int(args.get("num_results", 3))
-        follow: bool = bool(args.get("follow", False))
+        follow: bool = bool(args.get("follow", True))
 
         _log.info("Search '%s' (num_results=%s, follow=%s)", query, num_results, follow)
 
@@ -140,6 +158,16 @@ class WebSearchPlugin(Plugin):
         text = self._extract_text(html)
         summary = text[:500].replace("\n", " ")  # naive truncation
         return f"Summary from {url}: {summary}…"
+
+    async def _handle_fetch(self, args: Dict[str, Any]) -> str:
+        url: str = args["url"]
+        max_chars: int = int(args.get("max_chars", 500))
+
+        content = await self._fetch_and_summarise(url)
+        # _fetch_and_summarise already truncates to 500, re-truncate if caller asked <500
+        if len(content) > max_chars:
+            content = content[: max_chars - 1] + "…"
+        return content
 
     # -------------------------- util ----------------------------------------
 
