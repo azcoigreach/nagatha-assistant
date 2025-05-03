@@ -12,6 +12,8 @@ Key features
 - Integrations: (planned) connect with Obsidian and other services
 - Cross-session memory: configurable inclusion of messages from past
   conversations so Nagatha can remember previous interactions.
+- Usage & cost tracking: automatically records total tokens and estimated USD
+  spend per model.
 
 Key Features (DB & Chat)
 - AI Chat: interactive chat sessions with LLM (OpenAI), with persistent session history
@@ -92,6 +94,18 @@ Chat via CLI:
    nagatha chat history <session_id>    # show session history
    # Send a message and include the last 15 messages from *other* sessions
    nagatha chat send <session_id> "Hello" --context-limit 15
+
+Show cumulative usage/cost:
+
+   ```
+   nagatha usage
+   ```
+
+List available models:
+
+   ```
+   nagatha models
+   ```
    ```
 
 Textual UI shortcuts:
@@ -103,6 +117,8 @@ Textual UI shortcuts:
    * `/history`      – re-print current session history  
    * `/context [N]`  – get or set number **N** of cross-session messages to
      prepend as additional context (same as `--context-limit` flag).
+   * `/models`       – list available OpenAI models (same as `nagatha models`)  
+   * `/usage`        – show aggregated token usage & cost (same as `nagatha usage`)
 
 Configuration
 -------------
@@ -112,6 +128,9 @@ Environment variables are loaded via `python-dotenv`. Key vars:
 - `LOG_FILE`: path to the rotating log file
 - `CONTEXT_MEMORY_MESSAGES`: default number of messages from *other* sessions
   to include as context (overridable per-run via CLI/UI). 0 = disabled.
+- `OPENAI_MODEL`: default chat model (e.g. `gpt-3.5-turbo`)
+- `NAGATHA_USAGE_FILE`: override path for cumulative usage JSON (optional)
+
 
 Logging & Telemetry
 -------------------

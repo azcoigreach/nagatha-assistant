@@ -12,8 +12,10 @@ from nagatha_assistant.modules.chat import (
     start_session,
     list_sessions,
     get_messages,
-    send_message
+    send_message,
 )
+
+from nagatha_assistant.utils.usage_tracker import load_usage
 
 
 # -----------------------------
@@ -51,6 +53,51 @@ def cli(log_level):
     logging.root.setLevel(resolved_level)
 
     logger.info(f"Logger initialised at {resolved_level_name}")
+
+
+# ------------------------------------------------------------------
+# Utility commands – model listing & usage stats
+# ------------------------------------------------------------------
+
+
+@cli.command()
+def models():
+    """List available chat/completion models from the OpenAI account."""
+    import openai
+
+    client = openai.OpenAI()
+    try:
+        model_list = client.models.list()
+    except Exception as exc:  # noqa: BLE001
+        click.echo(f"Error fetching models: {exc}")
+        return
+
+    click.echo("Available models:")
+    for m in model_list.data:
+        click.echo(f"- {m.id}")
+
+
+@cli.command()
+def usage():
+    """Show cumulative token counts & estimated spend per model."""
+
+    data = load_usage()
+    if not data:
+        click.echo("No usage recorded yet.")
+        return
+
+    click.echo("Model usage:")
+    fmt = "{:<30} {:>10} {:>10} {:>12}"
+    click.echo(fmt.format("MODEL", "PROMPT", "COMP", "COST (USD)"))
+    for model, stats in data.items():
+        click.echo(
+            fmt.format(
+                model,
+                int(stats["prompt_tokens"]),
+                int(stats["completion_tokens"]),
+                f"{stats['cost_usd']:.4f}",
+            )
+        )
 
 
 @cli.command()

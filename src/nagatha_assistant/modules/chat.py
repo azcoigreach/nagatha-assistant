@@ -21,6 +21,7 @@ from sqlalchemy import select
 from openai import AsyncOpenAI
 from nagatha_assistant.db import engine, SessionLocal
 from nagatha_assistant.db_models import ConversationSession, Message
+from nagatha_assistant.utils.usage_tracker import record_usage
 
 # Instantiate a single AsyncOpenAI client
 client = AsyncOpenAI()
@@ -143,6 +144,15 @@ async def send_message(
     else:
         # resource object has attribute .content
         assistant_msg = choice_msg.content
+
+    # ------------------------------------------------------------------
+    # Usage tracking (tokens & cost)
+    # ------------------------------------------------------------------
+    usage = getattr(response, "usage", None)
+    if usage:  # OpenAI returns this when billing is enabled
+        prompt_tokens = int(getattr(usage, "prompt_tokens", 0))
+        completion_tokens = int(getattr(usage, "completion_tokens", 0))
+        record_usage(model_name, prompt_tokens, completion_tokens)
 
     # Store messages
     async with SessionLocal() as session:

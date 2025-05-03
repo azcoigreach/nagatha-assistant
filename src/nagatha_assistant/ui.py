@@ -138,6 +138,10 @@ class ChatApp(App):
                     self.chat_log.write("[system] context value must be >=0 integer")
         elif name == "history":
             await self._render_history()
+        elif name == "models":
+            await self._show_models()
+        elif name == "usage":
+            self._show_usage()
         else:
             self.chat_log.write(f"[system] Unknown command '{name}'. Try /help.")
 
@@ -173,6 +177,37 @@ class ChatApp(App):
         for s in sessions:
             self.chat_log.write(f" · id={s.id} created_at={s.created_at}")
 
+    async def _show_models(self):
+        """Fetch and display available models."""
+        try:
+            import openai
+
+            client = openai.OpenAI()
+            mdl_list = client.models.list()
+        except Exception as exc:  # noqa: BLE001
+            self.chat_log.write(f"[system] Error fetching models: {exc}")
+            return
+
+        self.chat_log.write("[system] Available models:")
+        for m in mdl_list.data:
+            self.chat_log.write(f" · {m.id}")
+
+    def _show_usage(self):
+        from nagatha_assistant.utils.usage_tracker import load_usage
+
+        data = load_usage()
+        if not data:
+            self.chat_log.write("[system] No usage recorded yet.")
+            return
+
+        self.chat_log.write("[system] Usage statistics (tokens / cost):")
+        for model, stats in data.items():
+            cost = stats.get("cost_usd", 0)
+            self.chat_log.write(
+                f" · {model}: prompt={int(stats['prompt_tokens'])}, "
+                f"completion={int(stats['completion_tokens'])}, cost=${cost:.4f}"
+            )
+
     def _print_help(self):
         self.chat_log.write("[system] Commands:")
         self.chat_log.write("  /help                – show this help")
@@ -181,6 +216,8 @@ class ChatApp(App):
         self.chat_log.write("  /switch <id>         – switch to existing session")
         self.chat_log.write("  /history             – show current session history")
         self.chat_log.write("  /context [N]         – get or set cross-session context limit")
+        self.chat_log.write("  /models             – list available OpenAI models")
+        self.chat_log.write("  /usage              – show total token usage & cost")
 
 def run_app():
     """
