@@ -82,46 +82,11 @@ Prerequisites:
 
 Creating a plugin
 -----------------
-Plugins live in `src/nagatha_assistant/plugins/` and subclass
-`nagatha_assistant.core.plugin.Plugin`.  Each plugin advertises callable
-functions via JSON-schema so the LLM can invoke them at runtime.
+Plugins live in `src/nagatha_assistant/plugins/`.
+They are discovered automatically at runtime and exposed to the LLM through
+OpenAI’s *function-calling* interface.
 
-Minimal template:
-
-```python
-from nagatha_assistant.core.plugin import Plugin
-
-
-class EchoPlugin(Plugin):
-    name = "echo"
-    version = "0.1"
-
-    async def setup(self, config):
-        ...  # optional
-
-    async def teardown(self):
-        ...  # optional
-
-    def function_specs(self):
-        return [
-            {
-                "name": "echo",
-                "description": "Return the provided text",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"text": {"type": "string"}},
-                    "required": ["text"],
-                },
-            }
-        ]
-
-    async def call(self, name, arguments):
-        if name == "echo":
-            return arguments.get("text", "")
-```
-
-Place the file under `plugins/`, restart the CLI/UI, and Nagatha will be able
-to use `/echo` capabilities whenever the LLM asks for it.
+See `docs/plugins.md` for the complete guide and a minimal template.
    ```
 
 5. Start the CLI:
