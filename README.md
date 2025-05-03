@@ -17,6 +17,8 @@ Key features
 - Plugin architecture: extend Nagatha with self-contained modules that expose
   callable *functions*; the chat agent can invoke these at runtime via the
   OpenAI function-calling interface.
+- Web search plugin: allows the agent to query the internet via SearXNG and
+  summarise findings, with transparent citation of sources.
 
 Key Features (DB & Chat)
 - AI Chat: interactive chat sessions with LLM (OpenAI), with persistent session history

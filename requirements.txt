@@ -8,3 +8,5 @@
 SQLAlchemy
 alembic
 aiosqlite
+aiohttp
+beautifulsoup4
