@@ -1,5 +1,6 @@
 import abc
-from typing import Any, Dict, List, Callable, Awaitable
+import logging
+from typing import Any, Dict, List
 
 class Plugin(abc.ABC):
     """
@@ -59,6 +60,7 @@ class PluginManager:
 
     def __init__(self, plugin_package: str = "nagatha_assistant.plugins"):
         self.plugin_package = plugin_package
+        self._log = logging.getLogger(__name__)
         self.plugins: List[Plugin] = []
 
     async def discover(self) -> None:
@@ -77,6 +79,7 @@ class PluginManager:
                 if isinstance(obj, type) and issubclass(obj, Plugin) and obj is not Plugin:
                     instance = obj()
                     self.plugins.append(instance)
+                    self._log.info("Discovered plugin '%s' v%s", instance.name, instance.version)
 
         # Build lookup table for fast routing
         self._function_map = {}
@@ -114,4 +117,7 @@ class PluginManager:
         plugin = self._function_map.get(name)
         if not plugin:
             raise ValueError(f"Function '{name}' not found in any plugin")
-        return await plugin.call(name, arguments)
+        self._log.debug("Routing function call '%s' with args=%s", name, arguments)
+        result = await plugin.call(name, arguments)
+        self._log.info("Plugin '%s' executed function '%s'", plugin.name, name)
+        return result
