@@ -20,7 +20,7 @@ async def test_send_message_stores_history(monkeypatch):
     calls = {}
 
     # Mock OpenAI API create call
-    async def fake_create(model, messages):
+    async def fake_create(model, messages, **kwargs):
         # Record call parameters
         calls['model'] = model
         calls['messages'] = list(messages)
