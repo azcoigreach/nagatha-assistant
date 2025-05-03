@@ -10,6 +10,8 @@ Key features
 - Reminders & notifications: schedule and trigger reminders
 - Plugin System: dynamic discovery and management of feature plugins
 - Integrations: (planned) connect with Obsidian and other services
+- Cross-session memory: configurable inclusion of messages from past
+  conversations so Nagatha can remember previous interactions.
 
 Key Features (DB & Chat)
 - AI Chat: interactive chat sessions with LLM (OpenAI), with persistent session history
@@ -88,8 +90,19 @@ Chat via CLI:
    nagatha chat new                     # create new session
    nagatha chat list                    # list sessions
    nagatha chat history <session_id>    # show session history
-   nagatha chat send <session_id> "Hello"
+   # Send a message and include the last 15 messages from *other* sessions
+   nagatha chat send <session_id> "Hello" --context-limit 15
    ```
+
+Textual UI shortcuts:
+
+   * `/help`         – list all commands  
+   * `/sessions`     – list existing sessions  
+   * `/new`          – create and switch to a new session  
+   * `/switch <id>`  – change to a past session  
+   * `/history`      – re-print current session history  
+   * `/context [N]`  – get or set number **N** of cross-session messages to
+     prepend as additional context (same as `--context-limit` flag).
 
 Configuration
 -------------
@@ -97,13 +110,17 @@ Environment variables are loaded via `python-dotenv`. Key vars:
 - `OPENAI_API_KEY`: your OpenAI API token
 - `LOG_LEVEL`: default log verbosity (DEBUG, INFO, WARNING, ERROR)
 - `LOG_FILE`: path to the rotating log file
+- `CONTEXT_MEMORY_MESSAGES`: default number of messages from *other* sessions
+  to include as context (overridable per-run via CLI/UI). 0 = disabled.
 
 Logging & Telemetry
 -------------------
 - Uses Python's built-in `logging` with a `RotatingFileHandler`
-- Five levels supported: DEBUG, INFO, WARNING, ERROR, CRITICAL
+- Five levels supported: DEBUG, INFO, WARNING, ERROR, CRITICAL (default
+  project-wide level is **WARNING**)
 - Logs written to `nagatha.log` by default, rotated at 10 MB with 5 backups
-- Logging level adjustable at runtime via CLI flags and UI
+- Logging level adjustable at runtime via CLI `--log-level` flag, UI, or
+  `LOG_LEVEL` env-var.
 - API usage metrics and cost tracking will be logged
 
 Development Workflow

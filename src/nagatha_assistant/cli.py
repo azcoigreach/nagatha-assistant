@@ -16,16 +16,41 @@ from nagatha_assistant.modules.chat import (
 )
 
 
+# -----------------------------
+# Main entry point / CLI group
+# -----------------------------
+# A single ``--log-level`` option allows a user to raise or lower the verbosity
+# at runtime.  If the flag is not supplied we fall back to the
+# ``LOG_LEVEL`` environment variable or ultimately to ``WARNING`` which is the
+# library-wide default defined in ``utils.logger``.
+
+
 @click.group()
-@click.option("--log-level", default=None, help="Set log level (DEBUG, INFO, etc.)")
+@click.option(
+    "--log-level",
+    default=None,
+    help="Set log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+)
 def cli(log_level):
     """
     Nagatha Assistant CLI.
     """
-    level = log_level or os.getenv("LOG_LEVEL", "INFO")
+    # 1) Defer to the command-line flag if present
+    # 2) Else fall back to ``LOG_LEVEL`` env var
+    # 3) Else rely on project default (WARNING)
+
+    resolved_level_name = (log_level or os.getenv("LOG_LEVEL") or "WARNING").upper()
+
+    # Initialise the shared logger instance
     logger = setup_logger()
-    logger.setLevel(getattr(logging, level.upper(), logging.INFO))
-    logger.info(f"Logger initialized at {level.upper()}")
+
+    # Apply the requested level to *both* this module's logger and the root
+    # logger so that all log records respect the CLI flag.
+    resolved_level = getattr(logging, resolved_level_name, logging.WARNING)
+    logger.setLevel(resolved_level)
+    logging.root.setLevel(resolved_level)
+
+    logger.info(f"Logger initialised at {resolved_level_name}")
 
 
 @cli.command()
@@ -78,15 +103,26 @@ def chat_history(session_id):
     for m in msgs:
         click.echo(f"[{m.timestamp}] {m.role}: {m.content}")
 
+# -----------------------------
+# Send message command
+# -----------------------------
+
+
 @chat.command('send')
 @click.argument('session_id', type=int)
 @click.argument('message', nargs=-1)
-def chat_send(session_id, message):
+@click.option(
+    '--context-limit',
+    type=int,
+    default=None,
+    help='Number of recent messages from other sessions to include as context.',
+)
+def chat_send(session_id, message, context_limit):
     """
     Send a message to the model and store the reply.
     """
     text = ' '.join(message)
-    reply = asyncio.run(send_message(session_id, text))
+    reply = asyncio.run(send_message(session_id, text, memory_limit=context_limit))
     click.echo(reply)
 
 

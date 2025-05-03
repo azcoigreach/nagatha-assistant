@@ -1,16 +1,27 @@
 """
 Chat session management: start sessions, send messages via OpenAI, and persist history.
 """
+# ---------------------------------------------------------------------------
+# Standard library imports
+# ---------------------------------------------------------------------------
 import os
 import asyncio
-from dotenv import load_dotenv
-from typing import List, Dict
+from typing import List, Optional
+
+# Third-party (optional) -----------------------------------------------------
+# ``python-dotenv`` is a developer convenience; silently ignore if missing so
+# production environments without the package still run.
+try:
+    from dotenv import load_dotenv  # type: ignore
+
+    load_dotenv()
+except ModuleNotFoundError:
+    pass
 from sqlalchemy import select
 from openai import AsyncOpenAI
 from nagatha_assistant.db import engine, SessionLocal
 from nagatha_assistant.db_models import ConversationSession, Message
 
-load_dotenv()
 # Instantiate a single AsyncOpenAI client
 client = AsyncOpenAI()
 
@@ -58,31 +69,72 @@ async def list_sessions() -> List[ConversationSession]:  # noqa
         result = await session.execute(stmt)
         return result.scalars().all()
 
+# ---------------------------------------------------------------------------
+# Public helper
+# ---------------------------------------------------------------------------
+# ``memory_limit`` controls how many messages from *other* sessions are fed to
+# the model in addition to the current session history.  This gives Nagatha a
+# configurable long-term memory while preventing the prompt from growing
+# without bound.
+#
+# The precedence order for determining the limit is:
+#   1. Explicit ``memory_limit`` argument (CLI option, UI parameter, etc.)
+#   2. ``CONTEXT_MEMORY_MESSAGES`` environment variable (integer)
+#   3. Default: 0 (no cross-session context)
+
+
 async def send_message(
     session_id: int,
     user_message: str,
-    model: str = None
+    model: str | None = None,
+    memory_limit: Optional[int] = None,
 ) -> str:
     """
-    Send a user message to the OpenAI ChatCompletion API, store the user and assistant messages,
-    and return the assistant's reply.
+    Send a user message to the OpenAI ChatCompletion API, optionally augmenting
+    the prompt with a configurable number of messages from *other* sessions.
+    All user/assistant messages are persisted and the assistant's reply is
+    returned.
     """
     # Prepare model name
     model_name = model or os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
 
-    # Load history
-    history = []
+    # Determine cross-session memory to include
+    if memory_limit is None:
+        memory_limit = int(os.getenv("CONTEXT_MEMORY_MESSAGES", "0"))
+    memory_limit = max(memory_limit, 0)
+
+    # ------------------------------------------------------------------
+    # Collect context
+    # ------------------------------------------------------------------
+    history: list[dict[str, str]] = []
+
+    # 1. Optional cross-session context (oldest first)
+    if memory_limit:
+        async with SessionLocal() as session:
+            stmt = (
+                select(Message)
+                .where(Message.session_id != session_id)
+                .order_by(Message.timestamp.desc())
+                .limit(memory_limit)
+            )
+            result = await session.execute(stmt)
+            other_msgs = list(result.scalars())
+        # We queried newest first; reverse to chronological order
+        for msg in reversed(other_msgs):
+            history.append({"role": msg.role, "content": msg.content})
+
+    # 2. Current session history (already ordered asc.)
     messages = await get_messages(session_id)
     for msg in messages:
         history.append({"role": msg.role, "content": msg.content})
 
-    # Append user message
+    # 3. Append the new user message
     history.append({"role": "user", "content": user_message})
 
     # Call OpenAI via AsyncOpenAI client
     response = await client.chat.completions.create(
         model=model_name,
-        messages=history
+        messages=history,
     )
     # Extract assistant reply (handle both dict and resource objects)
     choice_msg = response.choices[0].message

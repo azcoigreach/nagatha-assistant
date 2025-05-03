@@ -14,8 +14,16 @@ def setup_logger(
     if logger.handlers:
         return logger
 
-    log_level = os.getenv("LOG_LEVEL", "DEBUG").upper()
-    logger.setLevel(getattr(logging, log_level, logging.DEBUG))
+    # Determine the desired log level.  The precedence order is:
+    # 1.  ``LOG_LEVEL`` environment variable – allows users to override
+    #     the log level globally without touching the code.
+    # 2.  Fallback to ``WARNING`` which is the project-wide default.
+    log_level = os.getenv("LOG_LEVEL", "WARNING").upper()
+
+    # Convert the textual level to the corresponding ``logging`` constant.
+    # If the provided value is invalid we still end up with a sensible
+    # default (`logging.WARNING`).
+    logger.setLevel(getattr(logging, log_level, logging.WARNING))
 
     log_file = os.getenv("LOG_FILE", "nagatha.log")
     handler = RotatingFileHandler(
@@ -27,9 +35,9 @@ def setup_logger(
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-    # Ensure the root logger does not output to the console
-    for handler in logging.root.handlers[:]:
-        logging.root.removeHandler(handler)
+    # # Ensure the root logger does not output to the console
+    # for handler in logging.root.handlers[:]:
+    #     logging.root.removeHandler(handler)
 
     # Add the RotatingFileHandler to the root logger
     logging.root.addHandler(handler)
