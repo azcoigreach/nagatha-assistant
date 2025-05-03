@@ -1,10 +1,12 @@
- click
- python-dotenv
- openai
- textual
- pytest
- pytest-asyncio
- rich
+click
+python-dotenv
+openai
+textual
+pytest
+pytest-asyncio
+rich
 SQLAlchemy
 alembic
 aiosqlite
+aiohttp
+beautifulsoup4

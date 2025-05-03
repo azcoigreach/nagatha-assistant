@@ -46,6 +46,28 @@ async def _ensure_plugins_ready() -> PluginManager:
         await _plugin_manager.setup_all({})  # No config for now
     return _plugin_manager
 
+# Ensure plugins teardown on interpreter exit (e.g. close aiohttp sessions)
+
+
+def _register_teardown():
+    import atexit, asyncio
+
+    async def _async_teardown():
+        if _plugin_manager:
+            await _plugin_manager.teardown_all()
+
+    def _sync():
+        try:
+            asyncio.run(_async_teardown())
+        except RuntimeError:
+            # event loop already closed – ignore
+            pass
+
+    atexit.register(_sync)
+
+
+_register_teardown()
+
 # Instantiate a single AsyncOpenAI client
 client = AsyncOpenAI()
 
