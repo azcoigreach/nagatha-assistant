@@ -16,6 +16,11 @@ from nagatha_assistant.modules.chat import (
 )
 
 from nagatha_assistant.utils.usage_tracker import load_usage
+import shutil
+from pathlib import Path
+from datetime import datetime
+from nagatha_assistant.modules.tasks import list_tasks
+from nagatha_assistant.modules.reminders import list_reminders
 
 
 # -----------------------------
@@ -171,6 +176,139 @@ def chat_send(session_id, message, context_limit):
     text = ' '.join(message)
     reply = asyncio.run(send_message(session_id, text, memory_limit=context_limit))
     click.echo(reply)
+
+# ------------------------------------------------------------------
+# Task management commands
+# ------------------------------------------------------------------
+@cli.group()
+def task():
+    """Task commands: list and manage tasks."""
+    pass
+
+@task.command('list')
+@click.option('--status', type=str, default=None, help='Filter by task status')
+@click.option('--priority', type=str, default=None, help='Filter by task priority')
+@click.option('--tag', 'tags', multiple=True, help='Filter by tag (repeatable)')
+def task_list(status, priority, tags):  # noqa: A002
+    """List tasks, optionally filtering by status, priority, and tags."""
+    tasks = asyncio.run(list_tasks(status=status, priority=priority, tags=list(tags) if tags else None))
+    if not tasks:
+        click.echo("No tasks found.")
+        return
+    for t in tasks:
+        click.echo(f"ID: {t['id']}")
+        click.echo(f"  Title      : {t['title']}")
+        click.echo(f"  Description: {t['description']}")
+        click.echo(f"  Status     : {t['status']}")
+        click.echo(f"  Priority   : {t['priority']}")
+        click.echo(f"  Due At     : {t['due_at']}")
+        click.echo(f"  Created At : {t['created_at']}")
+        click.echo(f"  Updated At : {t['updated_at']}")
+        click.echo(f"  Tags       : {', '.join(t['tags']) if t['tags'] else ''}")
+
+# ------------------------------------------------------------------
+# Reminder management commands
+# ------------------------------------------------------------------
+@cli.group()
+def reminder():
+    """Reminder commands: list and view reminders."""
+    pass
+
+@reminder.command('list')
+@click.option('--task-id', type=int, default=None, help='Filter by task ID')
+@click.option('--delivered', type=bool, default=None, help='Filter by delivered status')
+def reminder_list(task_id, delivered):  # noqa: A002
+    """List reminders, optionally filtering by task ID and delivery status."""
+    rems = asyncio.run(list_reminders(task_id=task_id, delivered=delivered))
+    if not rems:
+        click.echo("No reminders found.")
+        return
+    for r in rems:
+        click.echo(f"ID         : {r['id']}")
+        click.echo(f"  Task ID      : {r['task_id']}")
+        click.echo(f"  Remind At    : {r['remind_at']}")
+        click.echo(f"  Delivered    : {r['delivered']}")
+        click.echo(f"  Recurrence   : {r['recurrence']}")
+        click.echo(f"  Last Sent At : {r['last_sent_at']}")
+
+# ------------------------------------------------------------------
+# Database management commands
+# ------------------------------------------------------------------
+@cli.group()
+def db():
+    """Database management: run migrations and backup the database."""
+    pass
+
+@db.command('upgrade')
+def db_upgrade():
+    """Run Alembic migrations to the latest revision."""
+    # Dynamically read DATABASE_URL from environment
+    import os
+    raw_url = os.getenv('DATABASE_URL', 'sqlite+aiosqlite:///nagatha.db')
+    # Normalize SQLite URL to async driver
+    if raw_url.startswith('sqlite:///') and not raw_url.startswith('sqlite+aiosqlite:///'):
+        db_url = raw_url.replace('sqlite:///', 'sqlite+aiosqlite:///')
+    else:
+        db_url = raw_url
+    # Configure Alembic
+    from alembic.config import Config  # type: ignore
+    from alembic import command  # type: ignore
+    root = Path(__file__).resolve().parents[2]
+    cfg = Config(str(root / 'alembic.ini'))
+    cfg.set_main_option('script_location', str(root / 'migrations'))
+    cfg.set_main_option('sqlalchemy.url', db_url)
+    # Attempt upgrade; if tables already exist, stamp to head
+    try:
+        command.upgrade(cfg, 'head')
+        click.echo('Database successfully upgraded to the latest revision.')
+    except Exception as exc:
+        msg = str(exc)
+        if 'already exists' in msg.lower():
+            click.echo('Detected existing schema; stamping database to the latest Alembic revision.')
+            try:
+                command.stamp(cfg, 'head')
+                click.echo('Database marked as up-to-date (stamped to head).')
+            except Exception as stamp_exc:
+                click.echo(f'Error stamping database: {stamp_exc}', err=True)
+                sys.exit(1)
+        else:
+            click.echo(f'Error running migrations: {exc}', err=True)
+            sys.exit(1)
+
+@db.command('backup')
+@click.argument('destination', required=False, type=click.Path())
+def db_backup(destination):
+    """Backup the SQLite database file to DEST (defaults to timestamped copy)."""
+    # Dynamically read DATABASE_URL from environment
+    import os
+    raw_url = os.getenv('DATABASE_URL', 'sqlite+aiosqlite:///nagatha.db')
+    # Normalize SQLite URL to async driver
+    if raw_url.startswith('sqlite:///') and not raw_url.startswith('sqlite+aiosqlite:///'):
+        db_url = raw_url.replace('sqlite:///', 'sqlite+aiosqlite:///')
+    else:
+        db_url = raw_url
+    if not db_url.startswith('sqlite'):
+        click.echo('Backup is only supported for SQLite databases.', err=True)
+        return
+    # Extract file path after '///'
+    parts = db_url.split('///', 1)
+    if len(parts) != 2 or not parts[1] or ':memory:' in parts[1]:
+        click.echo('Cannot backup in-memory or invalid SQLite database.', err=True)
+        return
+    src = Path(parts[1])
+    if not src.exists():
+        click.echo(f'SQLite database file not found: {src}', err=True)
+        return
+    # Determine destination path
+    dest = Path(destination) if destination else None
+    if dest is None:
+        timestamp = datetime.now().strftime('%Y%m%dT%H%M%S')
+        dest = src.with_name(f"{src.stem}_backup_{timestamp}{src.suffix}")
+    try:
+        shutil.copy2(src, dest)
+        click.echo(f'Database backed up to {dest}')
+    except Exception as exc:
+        click.echo(f'Error backing up database: {exc}', err=True)
 
 
 if __name__ == "__main__":

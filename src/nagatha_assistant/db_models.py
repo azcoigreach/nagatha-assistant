@@ -1,7 +1,7 @@
 """
 Database models for Nagatha Assistant chat sessions.
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, func
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, func, Table, Boolean
 from sqlalchemy.orm import relationship
 
 from nagatha_assistant.db import Base
@@ -75,3 +75,56 @@ class Note(Base):
         secondary=note_tags,
         back_populates="notes",
     )
+    
+# ---------------------------------------------------------------------------
+# Task and Reminder models
+# ---------------------------------------------------------------------------
+# Association table for tasks and tags
+task_tags = Table(
+    "task_tags",
+    Base.metadata,
+    Column("task_id", Integer, ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+)
+
+class Task(Base):
+    __tablename__ = "tasks"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    status = Column(String(50), nullable=False, server_default="pending")  # pending, completed, closed
+    priority = Column(String(10), nullable=False, server_default="med")  # low, med, high
+    due_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    tags = relationship(
+        "Tag",
+        secondary=task_tags,
+        back_populates="tasks",
+    )
+    reminders = relationship(
+        "Reminder",
+        back_populates="task",
+        cascade="all, delete-orphan",
+    )
+
+class Reminder(Base):
+    __tablename__ = "reminders"
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    remind_at = Column(DateTime(timezone=True), nullable=False)
+    delivered = Column(Boolean, nullable=False, server_default="0")
+    recurrence = Column(String(20), nullable=True)  # daily, weekly, monthly, yearly
+    last_sent_at = Column(DateTime(timezone=True), nullable=True)
+
+    task = relationship("Task", back_populates="reminders")
+    
+# ---------------------------------------------------------------------------
+# Establish Task-Tag back-population on Tag
+# ---------------------------------------------------------------------------
+Tag.tasks = relationship(
+    "Task",
+    secondary=task_tags,
+    back_populates="tags",
+    cascade="all",
+)

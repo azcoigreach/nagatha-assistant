@@ -6,7 +6,8 @@ Key features
 ------------
 - Note-taking: capture and persist user notes in Markdown with titles, tags, and full-text search
 - Audio transcription: convert audio files into text
-- Task management: add, list, and track tasks
+- Task management: add, list, update, complete, and close tasks with priorities, tags, and due dates
+- Reminders: create and schedule reminders tied to tasks, with support for recurrence and background notifications
 - Reminders & notifications: schedule and trigger reminders
 - Plugin System: dynamic discovery and management of feature plugins
 - Integrations: (planned) connect with Obsidian and other services
@@ -122,6 +123,13 @@ List available models:
    ```
    nagatha models
    ```
+   ```
+
+Database management:
+
+   ```
+   nagatha db upgrade           # run Alembic migrations to latest revision
+   nagatha db backup [DEST]     # backup SQLite database (defaults to timestamped copy)
    ```
 
 Textual UI shortcuts:

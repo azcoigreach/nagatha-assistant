@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2025-05-03
+
+### Added
+- CLI commands for database management: `db upgrade` and `db backup`.
+
+### Changed
+- `db upgrade` now automatically stamps existing schemas to the latest Alembic revision when tables already exist.
+
+## [0.4.0] - 2025-05-03
+
+### Added
+- Task and Reminder models with tags, priorities, statuses, due dates, and associations (migration 0003).
+- Modules for tasks (`modules/tasks.py`) and reminders (`modules/reminders.py`) with full CRUD and scheduling support.
+- Background scheduler for automated notifications (via `start_scheduler`).
+- Tests for tasks (`tests/test_tasks_module.py`) and reminders (`tests/test_reminders_module.py`).
+- README documentation for time management features.
+
+### Changed
+- Bumped project version to 0.4.0 in setup.py and `__init__.py`.
 ## [0.3.0] - 2025-05-03
 
 ### Added
