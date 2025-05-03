@@ -1,5 +1,5 @@
 import abc
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Callable, Awaitable
 
 class Plugin(abc.ABC):
     """
@@ -36,6 +36,22 @@ class Plugin(abc.ABC):
         """
         ...
 
+    # ------------------------------------------------------------------
+    # Function-calling support (OpenAI tools / functions API)
+    # ------------------------------------------------------------------
+
+    @abc.abstractmethod
+    def function_specs(self) -> List[Dict[str, Any]]:
+        """Return JSON-schema specs describing callable plugin functions.
+
+        The structure must conform to the `functions` parameter expected by
+        OpenAI chat completions.
+        """
+
+    @abc.abstractmethod
+    async def call(self, name: str, arguments: Dict[str, Any]) -> str:
+        """Execute the function *name* with given *arguments* and return a string result."""
+
 class PluginManager:
     """
     Discovers and manages plugins in the nagatha_assistant.plugins package.
@@ -62,6 +78,12 @@ class PluginManager:
                     instance = obj()
                     self.plugins.append(instance)
 
+        # Build lookup table for fast routing
+        self._function_map = {}
+        for plugin in self.plugins:
+            for spec in plugin.function_specs():
+                self._function_map[spec["name"]] = plugin
+
     async def setup_all(self, config: Dict[str, Any]) -> None:
         """
         Run setup on all discovered plugins.
@@ -75,3 +97,21 @@ class PluginManager:
         """
         for plugin in self.plugins:
             await plugin.teardown()
+
+    # ------------------------------------------------------------------
+    # Integration helpers
+    # ------------------------------------------------------------------
+
+    def function_specs(self) -> List[Dict[str, Any]]:
+        """Aggregate all plugin function specs."""
+
+        specs: List[Dict[str, Any]] = []
+        for plugin in self.plugins:
+            specs.extend(plugin.function_specs())
+        return specs
+
+    async def call_function(self, name: str, arguments: Dict[str, Any]) -> str:
+        plugin = self._function_map.get(name)
+        if not plugin:
+            raise ValueError(f"Function '{name}' not found in any plugin")
+        return await plugin.call(name, arguments)

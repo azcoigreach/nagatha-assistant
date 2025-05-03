@@ -23,6 +23,24 @@ from nagatha_assistant.db import engine, SessionLocal
 from nagatha_assistant.db_models import ConversationSession, Message
 from nagatha_assistant.utils.usage_tracker import record_usage
 
+# ------------------------------------------------------------------
+# Plugin system
+# ------------------------------------------------------------------
+from nagatha_assistant.core.plugin import PluginManager
+
+
+# Global plugin manager instance – lazy initialisation
+_plugin_manager: PluginManager | None = None
+
+
+async def _ensure_plugins_ready() -> PluginManager:
+    global _plugin_manager
+    if _plugin_manager is None:
+        _plugin_manager = PluginManager()
+        await _plugin_manager.discover()
+        await _plugin_manager.setup_all({})  # No config for now
+    return _plugin_manager
+
 # Instantiate a single AsyncOpenAI client
 client = AsyncOpenAI()
 
@@ -132,18 +150,49 @@ async def send_message(
     # 3. Append the new user message
     history.append({"role": "user", "content": user_message})
 
-    # Call OpenAI via AsyncOpenAI client
+    # --------------------------------------------------------------
+    # Plugin function-calling integration
+    # --------------------------------------------------------------
+    plugin_manager = await _ensure_plugins_ready()
+    functions_spec = plugin_manager.function_specs()
+
+    # Call OpenAI via AsyncOpenAI client, advertising tool specs if any
     response = await client.chat.completions.create(
         model=model_name,
         messages=history,
+        functions=functions_spec or None,
     )
     # Extract assistant reply (handle both dict and resource objects)
     choice_msg = response.choices[0].message
-    if isinstance(choice_msg, dict):  # test mocks may use dict
-        assistant_msg = choice_msg["content"]
+
+    # If the assistant decided to call a function we handle it here
+    function_call = None
+    if isinstance(choice_msg, dict):  # mock dicts
+        assistant_msg = choice_msg.get("content")
+        function_call = choice_msg.get("function_call")
     else:
-        # resource object has attribute .content
-        assistant_msg = choice_msg.content
+        assistant_msg = getattr(choice_msg, "content", None)
+        function_call = getattr(choice_msg, "function_call", None)
+
+    # Execute plugin function if requested
+    if function_call:
+        fn_name = function_call["name"] if isinstance(function_call, dict) else function_call.name
+        args_json = function_call["arguments"] if isinstance(function_call, dict) else function_call.arguments
+        import json
+
+        try:
+            parsed_args = json.loads(args_json) if isinstance(args_json, str) else args_json
+        except json.JSONDecodeError:
+            parsed_args = {}
+
+        result = await plugin_manager.call_function(fn_name, parsed_args or {})
+
+        # Record function call and its result as messages for transparency
+        history.append({"role": "function", "name": fn_name, "content": str(result)})
+
+        # Optionally: make a follow-up call so model can use the result, but
+        # to keep this simple we just treat *result* as the assistant’s reply.
+        assistant_msg = str(result)
 
     # ------------------------------------------------------------------
     # Usage tracking (tokens & cost)
@@ -153,6 +202,9 @@ async def send_message(
         prompt_tokens = int(getattr(usage, "prompt_tokens", 0))
         completion_tokens = int(getattr(usage, "completion_tokens", 0))
         record_usage(model_name, prompt_tokens, completion_tokens)
+
+    # Use empty string if assistant_msg is None
+    assistant_msg = assistant_msg or ""
 
     # Store messages
     async with SessionLocal() as session:

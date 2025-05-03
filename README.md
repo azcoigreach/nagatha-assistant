@@ -14,6 +14,9 @@ Key features
   conversations so Nagatha can remember previous interactions.
 - Usage & cost tracking: automatically records total tokens and estimated USD
   spend per model.
+- Plugin architecture: extend Nagatha with self-contained modules that expose
+  callable *functions*; the chat agent can invoke these at runtime via the
+  OpenAI function-calling interface.
 
 Key Features (DB & Chat)
 - AI Chat: interactive chat sessions with LLM (OpenAI), with persistent session history
@@ -76,6 +79,49 @@ Prerequisites:
 
    ```
    pytest -q
+
+Creating a plugin
+-----------------
+Plugins live in `src/nagatha_assistant/plugins/` and subclass
+`nagatha_assistant.core.plugin.Plugin`.  Each plugin advertises callable
+functions via JSON-schema so the LLM can invoke them at runtime.
+
+Minimal template:
+
+```python
+from nagatha_assistant.core.plugin import Plugin
+
+
+class EchoPlugin(Plugin):
+    name = "echo"
+    version = "0.1"
+
+    async def setup(self, config):
+        ...  # optional
+
+    async def teardown(self):
+        ...  # optional
+
+    def function_specs(self):
+        return [
+            {
+                "name": "echo",
+                "description": "Return the provided text",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"text": {"type": "string"}},
+                    "required": ["text"],
+                },
+            }
+        ]
+
+    async def call(self, name, arguments):
+        if name == "echo":
+            return arguments.get("text", "")
+```
+
+Place the file under `plugins/`, restart the CLI/UI, and Nagatha will be able
+to use `/echo` capabilities whenever the LLM asks for it.
    ```
 
 5. Start the CLI:
