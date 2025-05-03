@@ -17,3 +17,25 @@ def test_plugin_base_importable():
     assert hasattr(Plugin, "version")
     assert hasattr(Plugin, "setup")
     assert hasattr(Plugin, "teardown")
+
+
+# ---------------------------------------------------------------------------
+# Echo plugin integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_echo_plugin_discovery_and_call():
+    """Echo plugin should be discovered and return the same text."""
+
+    manager = PluginManager()
+    await manager.discover()
+    await manager.setup_all({})
+
+    # Check that the echo function is advertised
+    func_names = [spec["name"] for spec in manager.function_specs()]
+    assert "echo" in func_names
+
+    # Call it and verify behaviour
+    result = await manager.call_function("echo", {"text": "foobar"})
+    assert result == "foobar"

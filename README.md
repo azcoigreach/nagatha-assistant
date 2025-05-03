@@ -14,6 +14,9 @@ Key features
   conversations so Nagatha can remember previous interactions.
 - Usage & cost tracking: automatically records total tokens and estimated USD
   spend per model.
+- Plugin architecture: extend Nagatha with self-contained modules that expose
+  callable *functions*; the chat agent can invoke these at runtime via the
+  OpenAI function-calling interface.
 
 Key Features (DB & Chat)
 - AI Chat: interactive chat sessions with LLM (OpenAI), with persistent session history
@@ -76,6 +79,14 @@ Prerequisites:
 
    ```
    pytest -q
+
+Creating a plugin
+-----------------
+Plugins live in `src/nagatha_assistant/plugins/`.
+They are discovered automatically at runtime and exposed to the LLM through
+OpenAI’s *function-calling* interface.
+
+See `docs/plugins.md` for the complete guide and a minimal template.
    ```
 
 5. Start the CLI:

@@ -1,9 +1,12 @@
 """
 Textual UI for Nagatha Assistant chat.
 """
-import asyncio
 import os
-import sys
+
+# Set up logging immediately
+from nagatha_assistant.utils.logger import setup_logger
+logger = setup_logger()
+
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, RichLog, Input
 # We now expose additional controls from the UI such as listing sessions or
@@ -12,22 +15,14 @@ from textual.widgets import Header, Footer, RichLog, Input
 # enhancements.  If linting complains about the unused import, it can be
 # safely removed.
 from textual.containers import Container  # noqa: F401
-
+from textual.app import App, ComposeResult
+from textual.widgets import Header, Footer, RichLog, Input
 from nagatha_assistant.modules.chat import (
     start_session,
     send_message,
     get_messages,
     list_sessions,
 )
-from nagatha_assistant.utils.logger import setup_logger
-
-# Use the shared logger setup and disable console output
-logger = setup_logger("ui", disable_console=True)
-
-# Redirect standard output and error to null when the UI is running
-# sys.stdout = open(os.devnull, 'w')
-# sys.stderr = open(os.devnull, 'w')
-
 
 class ChatApp(App):
     """
@@ -51,7 +46,8 @@ class ChatApp(App):
 
     async def on_mount(self) -> None:
         """Set up widgets, create first session and show instructions."""
-
+        # Setup logging
+        logger.debug("Mounting Nagatha UI...")
         # Runtime state --------------------------------------------------
         self.context_limit: int = int(os.getenv("CONTEXT_MEMORY_MESSAGES", "0"))
         self.session_id: int = await start_session()
@@ -71,8 +67,14 @@ class ChatApp(App):
         await self._render_history()
         self._print_help()
 
+        # Pre-load plugins so discovery logs are emitted immediately and tools
+        # are ready for the first user interaction.
+        from nagatha_assistant.modules.chat import _ensure_plugins_ready  # noqa: WPS433
+
+        await _ensure_plugins_ready()
+
         # Prevent log propagation into RichLog
-        logger.propagate = False
+        # logger.propagate = False
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         user_text = event.value.strip()
