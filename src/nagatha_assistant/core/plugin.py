@@ -60,7 +60,7 @@ class PluginManager:
 
     def __init__(self, plugin_package: str = "nagatha_assistant.plugins"):
         self.plugin_package = plugin_package
-        self._log = logging.getLogger(__name__)
+        self._log = logging.getLogger()
         self.plugins: List[Plugin] = []
 
     async def discover(self) -> None:

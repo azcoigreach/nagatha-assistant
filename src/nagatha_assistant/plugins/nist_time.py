@@ -50,13 +50,19 @@ class NistTimePlugin(Plugin):
         ]
 
     async def call(self, name: str, arguments: Dict[str, Any]) -> str:
+        import logging
+        logger = logging.getLogger()
+        logger.debug("NistTimePlugin called with name='%s' and arguments=%s", name, arguments)
         if name != "get_nist_time":
+            logger.error("NistTimePlugin can only handle 'get_nist_time', not %s", name)
             raise ValueError(f"NistTimePlugin cannot handle function {name}")
         tz_name = arguments.get("timezone", "MST")
         try:
+            logger.debug("NistTimePlugin calling _get_nist_time with tz_name='%s'", tz_name)
             return await self._get_nist_time(tz_name)
         except Exception as exc:
             # Return error message rather than raising to avoid crashing the agent
+            logger.error("Error in NistTimePlugin: %s", exc)
             return f"Error fetching time: {exc}"
 
     async def _get_nist_time(self, tz_name: str) -> str:
