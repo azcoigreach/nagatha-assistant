@@ -35,10 +35,6 @@ def setup_logger(
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-    # # Ensure the root logger does not output to the console
-    # for handler in logging.root.handlers[:]:
-    #     logging.root.removeHandler(handler)
-
     # Add the RotatingFileHandler to the root logger
     logging.root.addHandler(handler)
     logging.root.setLevel(logger.level)
