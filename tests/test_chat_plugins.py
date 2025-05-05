@@ -3,7 +3,7 @@ import json
 import pytest
 
 
-import nagatha_assistant.modules.chat as chat_module
+import nagatha_assistant.core.agent as chat_module
 
 
 # ---------------------------------------------------------------------------

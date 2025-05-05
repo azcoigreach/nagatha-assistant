@@ -9,4 +9,6 @@ SQLAlchemy
 alembic
 aiosqlite
 aiohttp
+fastapi
+uvicorn[standard]
 beautifulsoup4

@@ -1,1 +1,0 @@
-# Functional modules for Nagatha Assistant

@@ -1,7 +1,7 @@
 import pytest
 
-import nagatha_assistant.modules.chat as chat_module
-from nagatha_assistant.modules.chat import start_session, get_messages, send_message
+import nagatha_assistant.core.agent as chat_module
+from nagatha_assistant.core.agent import start_session, get_messages, send_message
 
 
 @pytest.mark.asyncio

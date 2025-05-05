@@ -8,9 +8,11 @@ import concurrent.futures, asyncio, logging, pathlib, threading
 
 # Load environment variables
 load_dotenv()
-# Database URL, defaulting to local SQLite file
-# Ensure use of async driver for SQLite
-raw_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///nagatha.db")
+# Determine default DB path in project root
+root_path = pathlib.Path(__file__).resolve().parents[2]
+default_db = root_path / "nagatha.db"
+# Database URL, defaulting to local SQLite file in project root
+raw_url = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{default_db}")
 if raw_url.startswith("sqlite:///") and not raw_url.startswith("sqlite+aiosqlite:///"):
     DATABASE_URL = raw_url.replace("sqlite:///", "sqlite+aiosqlite:///")
 else:

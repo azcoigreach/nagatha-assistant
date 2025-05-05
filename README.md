@@ -95,22 +95,43 @@ OpenAI’s *function-calling* interface.
 See `docs/plugins.md` for the complete guide and a minimal template.
    ```
 
-5. Start the CLI:
+5. Start the core server and UI:
 
+   # Start the Nagatha core server (API + plugin manager):
+   ```bash
+   nagatha server [--host HOST] [--port PORT]
    ```
-   .venv/bin/nagatha_assistant.cli run    # launches Textual UI
-   # or use console script:
-   nagatha run
+
+   # Launch the Textual UI (chat client):
+   ```bash
+   nagatha run [--host HOST] [--port PORT]
    ```
 
 Chat via CLI:
 
    ```
+   # Chat commands
    nagatha chat new                     # create new session
    nagatha chat list                    # list sessions
    nagatha chat history <session_id>    # show session history
    # Send a message and include the last 15 messages from *other* sessions
    nagatha chat send <session_id> "Hello" --context-limit 15
+
+   # Notes commands
+   nagatha note add "My Note" "This is the content" --tag tag1 --tag tag2
+   nagatha note list
+   nagatha note get <note_id>
+
+   # Task commands
+   nagatha task add "My Task" "Do something" --due-at 2025-05-10T12:00:00 --priority high --tag work
+   nagatha task list --status pending
+   nagatha task complete <task_id>
+   nagatha task close <task_id>
+
+   # Reminder commands
+   nagatha reminder add <task_id> 2025-05-11T09:00:00 --recurrence daily
+   nagatha reminder list --task-id <task_id>
+   nagatha reminder deliver <reminder_id>
 
 Show cumulative usage/cost:
 

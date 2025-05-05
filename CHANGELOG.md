@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2025-05-05
+
+### Added
+- Renamed CLI command `serve` to `server` for starting the core API service.
+- Updated documentation (README, docs) to reflect the new `server` command.
+
 ## [0.5.0] - 2025-05-03
 
 ### Added
