@@ -1,5 +1,6 @@
 click
 python-dotenv
+requests
 openai
 textual
 pytest
@@ -12,3 +13,4 @@ aiohttp
 fastapi
 uvicorn[standard]
 beautifulsoup4
+pyperclip

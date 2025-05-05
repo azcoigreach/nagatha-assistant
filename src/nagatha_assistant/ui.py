@@ -9,6 +9,10 @@ from datetime import datetime
 from aiohttp import ClientSession
 from textual.app import App
 from textual.widgets import Static, Footer, RichLog, Input
+from textual.binding import Binding
+import pyperclip
+import base64
+
 
 # Initialize logging
 from nagatha_assistant.utils.logger import setup_logger
@@ -52,6 +56,9 @@ class ChatApp(App):
     #chat_log { height: 1fr; border: round $accent; padding: 1; }
     #chat_input { height: auto; border: round $accent; padding: 1; }
     """
+    BINDINGS = [
+        Binding("ctrl+c", "copy_chat", "Copy chat log"),
+    ]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -90,6 +97,36 @@ class ChatApp(App):
     def _update_header(self) -> None:
         now = datetime.now().strftime("%H:%M:%S")
         self.header.update(f"Nagatha    {now}")
+
+    def action_copy_chat(self) -> None:
+        log: RichLog = self.query_one("#chat_log")
+        # build a list of just the text lines
+        plain_lines: list[str] = []
+        for strip in log.lines:
+            if hasattr(strip, "plain"):
+                # modern Rich: Strip.plain is the unstyled text
+                plain_lines.append(strip.plain)
+            else:
+                # fallback: iterate the segments inside the strip
+                plain_lines.append("".join(seg.text for seg in strip))
+        text = "\n".join(plain_lines)
+
+        # now copy the real text instead of reprs…
+        try:
+            import pyperclip
+            pyperclip.copy(text)
+            method = "pyperclip"
+        except Exception:
+            # your OSC52 fallback here (base64-encoded)
+            import base64
+            b64 = base64.b64encode(text.encode("utf-8")).decode("ascii")
+            print(f"\033]52;c;{b64}\a", end="", flush=True)
+            method = "OSC52"
+
+        self.chat_log.write(f"[system] Chat log copied via {method}.")
+        self.chat_log.scroll_end()
+        self.query_one("#chat_input", Input).focus()
+
 
 def run_app():
     """Run the Textual chat UI for Nagatha."""
