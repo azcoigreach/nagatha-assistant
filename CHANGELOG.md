@@ -1,8 +1,8 @@
-# Changelog
+## [0.7.2] - 2025-05-06
 
-All notable changes to this project will be documented in this file.
+### Added
+- Weather features: Introduce new weather forecast module, real-time temperature checks, and severe weather alerts.
 
-## [0.7.1] - 2025-05-05
 
 ### Added
 - Introduce `run` CLI command (`nagatha run`) to launch the Textual UI chat client.
