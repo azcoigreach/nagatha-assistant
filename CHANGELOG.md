@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.1] - 2025-05-05
+
+### Added
+- Introduce `run` CLI command (`nagatha run`) to launch the Textual UI chat client.
+
 ## [0.7.0] - 2025-05-05
 
 ### Added

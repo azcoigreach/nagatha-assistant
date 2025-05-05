@@ -137,6 +137,18 @@ def db_backup(destination):
         click.echo(f"Database backed up to {dest}")
     except Exception as exc:
         click.echo(f"Error backing up database: {exc}", err=True)
+    
+# Command to launch the Textual UI chat client
+@cli.command(name="run")
+@click.option("--host", default="127.0.0.1", help="Core server host to connect to.")
+@click.option("--port", default=8000, type=int, help="Core server port to connect to.")
+def run(host, port):
+    """
+    Launch the Textual UI client for Nagatha.
+    """
+    os.environ["NAGATHA_SERVER"] = f"http://{host}:{port}"
+    from nagatha_assistant.ui import run_app
+    run_app()
 
 if __name__ == "__main__":
     cli()
