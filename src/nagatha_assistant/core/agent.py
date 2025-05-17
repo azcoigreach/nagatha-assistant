@@ -128,6 +128,12 @@ async def send_message(
     if memory_limit is None:
         memory_limit = int(os.getenv("CONTEXT_MEMORY_MESSAGES", "0"))
     memory_limit = max(0, memory_limit)
+    from nagatha_assistant.utils.logger import setup_logger
+    import logging
+
+    setup_logger()
+    log = logging.getLogger(__name__)
+
     history: List[Dict[str, str]] = []
     if memory_limit:
         async with SessionLocal() as session:
@@ -145,22 +151,27 @@ async def send_message(
     for msg in msgs:
         history.append({"role": msg.role, "content": msg.content})
     history.append({"role": "user", "content": user_message})
+
     plugin_manager = await _ensure_plugins_ready()
     functions_spec = plugin_manager.function_specs() or None
+    log.debug(f"Functions spec sent to LLM: {[spec.get('name') for spec in functions_spec]}" if functions_spec else "No functions spec sent")
+
     response = await client.chat.completions.create(
         model=model_name,
         messages=history,
         functions=functions_spec,
     )
     choice = response.choices[0].message
-    assistant_msg: Optional[str]
+    assistant_msg: Optional[str] = None
     function_call = None
+
     if isinstance(choice, dict):
         assistant_msg = choice.get("content")
         function_call = choice.get("function_call")
     else:
         assistant_msg = getattr(choice, "content", None)
         function_call = getattr(choice, "function_call", None)
+
     if function_call:
         name = function_call.get("name") if isinstance(function_call, dict) else function_call.name
         args_json = function_call.get("arguments") if isinstance(function_call, dict) else function_call.arguments
@@ -169,21 +180,28 @@ async def send_message(
             parsed = json.loads(args_json) if isinstance(args_json, str) else args_json
         except json.JSONDecodeError:
             parsed = {}
+        log.debug(f"Detected function call '{name}' with arguments: {parsed}")
         result = await plugin_manager.call_function(name, parsed or {})
+        log.debug(f"Function '{name}' returned: {result}")
         history.append({"role": "function", "name": name, "content": str(result)})
         assistant_msg = str(result)
+
     usage = getattr(response, "usage", None)
     if usage:
         prompt_tokens = int(getattr(usage, "prompt_tokens", 0))
         completion_tokens = int(getattr(usage, "completion_tokens", 0))
         record_usage(model_name, prompt_tokens, completion_tokens)
+
     assistant_msg = assistant_msg or ""
+
     async with SessionLocal() as session:
         session.add(Message(session_id=session_id, role="user", content=user_message))
         bot = Message(session_id=session_id, role="assistant", content=assistant_msg)
         session.add(bot)
         await session.commit()
+
     await _notify(session_id, bot)
+
     return assistant_msg
 
 async def push_message(

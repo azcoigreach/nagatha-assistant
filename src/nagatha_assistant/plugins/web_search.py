@@ -27,7 +27,7 @@ from bs4 import BeautifulSoup  # type: ignore
 from nagatha_assistant.core.plugin import Plugin
 
 
-logging = logging.getLogger()
+logging = logging.getLogger(__name__)
 
 
 SEARX_URL = "https://search.stranger.social"  # production instance
@@ -41,7 +41,8 @@ class WebSearchPlugin(Plugin):
         self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20))
 
     async def teardown(self) -> None:  # noqa: D401
-        await self._session.close()
+        if getattr(self, '_session', None):
+            await self._session.close()
 
     # ------------------------------------------------------------------
     # Function specs – exposed to the LLM

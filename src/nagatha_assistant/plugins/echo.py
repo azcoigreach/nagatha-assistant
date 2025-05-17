@@ -52,7 +52,7 @@ class EchoPlugin(Plugin):
 
     async def call(self, name: str, arguments: Dict[str, Any]) -> str:  # noqa: D401
         import logging
-        logger = logging.getLogger()
+        logger = logging.getLogger(__name__)
 
         if name != "echo":
             raise ValueError(f"EchoPlugin can only handle 'echo', not {name}")

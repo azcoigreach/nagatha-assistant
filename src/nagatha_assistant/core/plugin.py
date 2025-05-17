@@ -1,5 +1,6 @@
 import abc
 import logging
+import json
 from typing import Any, Dict, List
 
 class Plugin(abc.ABC):
@@ -118,6 +119,13 @@ class PluginManager:
         if not plugin:
             raise ValueError(f"Function '{name}' not found in any plugin")
         self._log.debug("Routing function call '%s' with args=%s", name, arguments)
-        result = await plugin.call(name, arguments)
+        raw = await plugin.call(name, arguments)
         self._log.info("Plugin '%s' executed function '%s'", plugin.name, name)
+        # Format non-string results as JSON
+        result = raw
+        if not isinstance(raw, str):
+            try:
+                result = json.dumps(raw, default=str, indent=2)
+            except Exception:
+                result = str(raw)
         return result
