@@ -10,3 +10,5 @@ venv/
 *.db
 nagatha_usage.json
 .vscode/
+mcp.json
+.coverage

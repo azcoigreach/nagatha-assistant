@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "firecrawl-mcp": {
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "env": {
+        "FIRECRAWL_API_KEY": "your_firecrawl_api_key_here"
+      }
+    },
+    "mcp-server-bootstrap": {
+      "command": "python",
+      "args": ["/path/to/your/mcp-server-bootstrap/server.py"]
+    },
+    "nagatha-mastodon-mcp": {
+      "transport": "http",
+      "url": "http://localhost:8080/mcp",
+      "env": {
+        "OPENAI_API_KEY": "your_openai_api_key_here",
+        "MASTODON_ACCESS_TOKEN": "your_mastodon_access_token_here",
+        "MASTODON_API_BASE": "https://your.mastodon.instance"
+      }
+    }
+  }
+} 

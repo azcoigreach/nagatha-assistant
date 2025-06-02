@@ -1,3 +1,8 @@
+## [0.8.0] - 2025-05-07
+
+### Changed
+- Refactor to use Model Context Protocol (MCP) for improved integration and standardized communication.
+
 ## [0.7.2] - 2025-05-06
 
 ### Added

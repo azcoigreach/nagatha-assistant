@@ -1,1 +1,0 @@
-# Integration stubs for third-party services

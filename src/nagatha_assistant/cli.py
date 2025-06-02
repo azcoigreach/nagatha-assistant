@@ -3,6 +3,8 @@ import sys
 import logging
 import click
 import datetime
+import asyncio
+import json
 
 # Ensure src directory is on PYTHONPATH for package imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -23,29 +25,6 @@ def cli(log_level):
     logger.setLevel(level)
     logging.root.setLevel(level)
     logger.info(f"Logger initialised at {level_name}")
-
-
-@cli.command(name="server")
-@click.option("--host", default="127.0.0.1", help="Host to bind the server to.")
-@click.option("--port", default=8000, type=int, help="Port to bind the server to.")
-def server(host, port):
-    """
-    Start the Nagatha core server (API and plugin manager).
-    """
-    from nagatha_assistant.server import run_server
-    run_server(host=host, port=port)
-
-
-@cli.command(name="server")
-@click.option("--host", default="127.0.0.1", help="Core server host to connect to.")
-@click.option("--port", default=8000, type=int, help="Core server port to connect to.")
-def server(host, port):
-    """
-    Start the Nagatha core server (API and plugin manager).
-    """
-    # Point the UI at the core service
-    from nagatha_assistant.server import run_server
-    run_server(host=host, port=port)
 
 
 @cli.group()
@@ -138,17 +117,150 @@ def db_backup(destination):
     except Exception as exc:
         click.echo(f"Error backing up database: {exc}", err=True)
     
+
+@cli.group()
+def mcp():
+    """
+    MCP (Model Context Protocol) management commands.
+    """
+    pass
+
+@mcp.command("status")
+def mcp_status():
+    """
+    Show the status of MCP servers and available tools.
+    """
+    async def _show_status():
+        from nagatha_assistant.core.agent import get_mcp_status
+        status = await get_mcp_status()
+        
+        click.echo("=== MCP Status ===")
+        click.echo(f"Initialized: {status.get('initialized', False)}")
+        
+        if 'error' in status:
+            click.echo(f"Error: {status['error']}", err=True)
+            return
+        
+        click.echo("\n=== Servers ===")
+        for server_name, server_info in status.get('servers', {}).items():
+            connected = server_info.get('connected', False)
+            config = server_info.get('config')
+            tools = server_info.get('tools', [])
+            
+            status_icon = "✓" if connected else "✗"
+            click.echo(f"{status_icon} {server_name} ({config.transport if config else 'unknown'})")
+            
+            if config:
+                if config.command:
+                    click.echo(f"    Command: {config.command} {' '.join(config.args or [])}")
+                if config.url:
+                    click.echo(f"    URL: {config.url}")
+            
+            if tools:
+                click.echo(f"    Tools: {', '.join(tools)}")
+            click.echo()
+        
+        click.echo("=== Available Tools ===")
+        tools = status.get('tools', [])
+        if tools:
+            for tool in tools:
+                click.echo(f"• {tool['name']} ({tool['server']}): {tool['description']}")
+        else:
+            click.echo("No tools available")
+    
+    asyncio.run(_show_status())
+
+@mcp.command("reload")
+def mcp_reload():
+    """
+    Reload MCP configuration and reconnect to servers.
+    """
+    async def _reload():
+        from nagatha_assistant.core.mcp_manager import shutdown_mcp_manager, get_mcp_manager
+        click.echo("Shutting down existing MCP connections...")
+        await shutdown_mcp_manager()
+        click.echo("Reloading MCP configuration...")
+        manager = await get_mcp_manager()
+        click.echo(f"Reloaded with {len(manager.get_available_tools())} tools from {len(manager.sessions)} servers")
+    
+    asyncio.run(_reload())
+
 # Command to launch the Textual UI chat client
 @cli.command(name="run")
-@click.option("--host", default="127.0.0.1", help="Core server host to connect to.")
-@click.option("--port", default=8000, type=int, help="Core server port to connect to.")
-def run(host, port):
+def run():
     """
     Launch the Textual UI client for Nagatha.
     """
-    os.environ["NAGATHA_SERVER"] = f"http://{host}:{port}"
-    from nagatha_assistant.ui import run_app
-    run_app()
+    async def _run_with_lifecycle():
+        from nagatha_assistant.core.agent import startup, shutdown, format_mcp_status_for_chat
+        from nagatha_assistant.ui import run_app
+        from nagatha_assistant.utils.logger import setup_logger_with_env_control
+        
+        # Set up enhanced logging
+        logger = setup_logger_with_env_control()
+        
+        try:
+            # Show configuration info
+            click.echo("Initializing Nagatha Assistant...")
+            
+            # Check for mcp.json
+            if os.path.exists("mcp.json"):
+                try:
+                    with open("mcp.json", 'r') as f:
+                        config = json.load(f)
+                    server_count = len(config.get("mcpServers", {}))
+                    click.echo(f"Found {server_count} MCP servers configured in mcp.json")
+                except Exception as e:
+                    click.echo(f"⚠️  Warning: Could not read mcp.json: {e}")
+            else:
+                click.echo("ℹ️  No mcp.json found - running without MCP servers")
+            
+            # Show timeout settings
+            conn_timeout = os.getenv("NAGATHA_MCP_CONNECTION_TIMEOUT", "5")
+            disc_timeout = os.getenv("NAGATHA_MCP_DISCOVERY_TIMEOUT", "3")
+            click.echo(f"Connection timeout: {conn_timeout}s, Discovery timeout: {disc_timeout}s")
+            
+            # Initialize MCP and database
+            click.echo("Connecting to MCP servers...")
+            init_summary = await startup()
+            
+            # Show initialization results
+            if init_summary['connected'] > 0:
+                click.echo(f"✅ Connected to {init_summary['connected']}/{init_summary['total_configured']} MCP servers")
+                click.echo(f"🔧 {init_summary['total_tools']} tools available")
+                if init_summary['connected_servers']:
+                    click.echo(f"Connected: {', '.join(init_summary['connected_servers'])}")
+                logger.info(f"Startup successful: {init_summary['connected']} servers, {init_summary['total_tools']} tools")
+            else:
+                click.echo(f"⚠️  No MCP servers connected")
+                if init_summary['total_configured'] > 0:
+                    click.echo(f"   ({init_summary['total_configured']} configured but failed)")
+                logger.warning("Startup completed but no MCP servers connected")
+            
+            if init_summary['failed_servers']:
+                click.echo("❌ Failed connections:")
+                for server_name, error in init_summary['failed_servers']:
+                    click.echo(f"   • {server_name}: {error}")
+            
+            click.echo("\nStarting Nagatha UI...")
+            
+            # Run the UI
+            await run_app()
+        except KeyboardInterrupt:
+            click.echo("\nShutting down Nagatha...")
+        except Exception as e:
+            click.echo(f"Error during startup: {e}", err=True)
+            logger.exception("Error during startup")
+        finally:
+            # Clean up MCP connections
+            try:
+                await shutdown()
+                click.echo("Shutdown complete.")
+            except Exception as e:
+                click.echo(f"Error during shutdown: {e}", err=True)
+                logger.exception("Error during shutdown")
+    
+    asyncio.run(_run_with_lifecycle())
 
 if __name__ == "__main__":
     cli()

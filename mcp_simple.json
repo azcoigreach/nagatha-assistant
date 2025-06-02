@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "nagatha-mastodon-mcp": {
+      "transport": "http",
+      "url": "http://localhost:8080/mcp",
+      "env": {
+        "OPENAI_API_KEY": "",
+        "MASTODON_ACCESS_TOKEN": "",
+        "MASTODON_API_BASE": ""
+      }
+    }
+  }
+} 
