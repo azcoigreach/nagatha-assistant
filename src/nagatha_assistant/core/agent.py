@@ -147,13 +147,39 @@ async def list_sessions() -> List[ConversationSession]:
         return result.scalars().all()
 
 async def get_available_tools() -> List[Dict[str, Any]]:
-    """Get list of all available MCP tools."""
+    """Get list of all available MCP tools and plugin commands."""
+    tools = []
+    
+    # Get MCP tools
     try:
         mcp_manager = await get_mcp_manager()
-        return mcp_manager.get_available_tools()
+        mcp_tools = mcp_manager.get_available_tools()
+        tools.extend(mcp_tools)
     except Exception as e:
-        logging.error(f"Error getting available tools: {e}")
-        return []
+        logging.error(f"Error getting MCP tools: {e}")
+    
+    # Get plugin commands
+    try:
+        from .plugin_manager import get_plugin_manager
+        plugin_manager = get_plugin_manager()
+        plugin_commands = plugin_manager.get_available_commands()
+        
+        # Convert plugin commands to tool format
+        for cmd_name, cmd_info in plugin_commands.items():
+            tools.append({
+                "name": cmd_name,
+                "description": cmd_info["description"],
+                "schema": cmd_info.get("parameters", {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }),
+                "server": f"plugin:{cmd_info['plugin']}"
+            })
+    except Exception as e:
+        logging.error(f"Error getting plugin commands: {e}")
+    
+    return tools
 
 async def get_mcp_status() -> Dict[str, Any]:
     """Get status information about MCP servers."""
@@ -187,6 +213,35 @@ async def call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Any:
     except Exception as e:
         logging.error(f"Error calling MCP tool '{tool_name}': {e}")
         raise
+
+
+async def call_plugin_command(command_name: str, arguments: Dict[str, Any]) -> Any:
+    """Call a plugin command and return the result."""
+    try:
+        from .plugin_manager import get_plugin_manager
+        plugin_manager = get_plugin_manager()
+        return await plugin_manager.execute_command(command_name, **arguments)
+    except Exception as e:
+        logging.error(f"Error calling plugin command '{command_name}': {e}")
+        raise
+
+
+async def call_tool_or_command(name: str, arguments: Dict[str, Any]) -> Any:
+    """
+    Call either an MCP tool or plugin command by name.
+    
+    First tries MCP tools, then plugin commands.
+    """
+    try:
+        # Try MCP tool first
+        return await call_mcp_tool(name, arguments)
+    except Exception:
+        try:
+            # Fall back to plugin command
+            return await call_plugin_command(name, arguments)
+        except Exception as e:
+            logging.error(f"Error calling tool/command '{name}': {e}")
+            raise
 
 def format_mcp_status_for_chat(init_summary: Dict[str, Any]) -> str:
     """Format MCP initialization status for display in chat."""
@@ -380,10 +435,10 @@ async def send_message(
         try:
             tool_args = tool_args or {}
             logger.info(f"Direct tool call: '{tool_name}' with args: {tool_args}")
-            result = await call_mcp_tool(tool_name, tool_args)
+            result = await call_tool_or_command(tool_name, tool_args)
             assistant_msg = f"Tool '{tool_name}' result:\n{result}"
         except Exception as e:
-            logger.exception(f"Error calling MCP tool '{tool_name}'")
+            logger.exception(f"Error calling tool/command '{tool_name}'")
             assistant_msg = f"Error calling tool '{tool_name}': {e}"
     else:
         # Use Nagatha's intelligent conversation system
@@ -464,7 +519,7 @@ async def send_message(
                     
                     try:
                         logger.info(f"LLM requested tool call: '{tool_name}' with args: {tool_args}")
-                        tool_result = await call_mcp_tool(tool_name, tool_args)
+                        tool_result = await call_tool_or_command(tool_name, tool_args)
                         assistant_msg += f"I used the {tool_name} tool and here's what I found:\n\n{tool_result}\n\n"
                     except Exception as e:
                         logger.error(f"Error in tool call '{tool_name}': {e}")
@@ -487,10 +542,10 @@ async def send_message(
                         messages=conversation_history
                     )
                     
-                    assistant_msg = final_response.choices[0].message.content
+                    assistant_msg = final_response.choices[0].message.content or assistant_msg
             else:
                 # No tool calls, just use the direct response
-                assistant_msg = response.choices[0].message.content
+                assistant_msg = response.choices[0].message.content or ""
             
             # Record usage
             if hasattr(response, 'usage') and response.usage:
