@@ -13,6 +13,10 @@ from nagatha_assistant.utils.usage_tracker import record_usage
 from nagatha_assistant.utils.logger import setup_logger_with_env_control, should_log_to_chat
 from nagatha_assistant.core.mcp_manager import get_mcp_manager, shutdown_mcp_manager
 from nagatha_assistant.core.personality import get_system_prompt
+from nagatha_assistant.core.event_bus import get_event_bus
+from nagatha_assistant.core.event import (
+    StandardEventTypes, create_system_event, create_agent_event, EventPriority
+)
 
 # OpenAI client for conversations with timeout configuration
 OPENAI_TIMEOUT = float(os.getenv("OPENAI_TIMEOUT", "60"))  # 60 seconds for tool-heavy requests
@@ -60,6 +64,18 @@ async def startup() -> Dict[str, Any]:
     # Setup enhanced logging
     logger = setup_logger_with_env_control()
     
+    # Start the event bus
+    event_bus = get_event_bus()
+    await event_bus.start()
+    
+    # Publish system startup event
+    startup_event = create_system_event(
+        StandardEventTypes.SYSTEM_STARTUP,
+        {"timestamp": asyncio.get_event_loop().time()},
+        EventPriority.HIGH
+    )
+    await event_bus.publish(startup_event)
+    
     await init_db()
     
     # Initialize MCP manager and get initialization summary
@@ -76,7 +92,20 @@ async def startup() -> Dict[str, Any]:
 
 async def shutdown() -> None:
     """Clean up application resources."""
+    # Get event bus and publish shutdown event
+    event_bus = get_event_bus()
+    if event_bus._running:
+        shutdown_event = create_system_event(
+            StandardEventTypes.SYSTEM_SHUTDOWN,
+            {"timestamp": asyncio.get_event_loop().time()},
+            EventPriority.HIGH
+        )
+        await event_bus.publish(shutdown_event)
+    
     await shutdown_mcp_manager()
+    
+    # Stop the event bus
+    await event_bus.stop()
 
 async def start_session() -> int:
     """Create a new conversation session and return its ID."""
@@ -89,7 +118,19 @@ async def start_session() -> int:
         session.add(new_session)
         await session.commit()
         await session.refresh(new_session)
-        return new_session.id
+        session_id = new_session.id
+        
+        # Publish conversation started event
+        event_bus = get_event_bus()
+        if event_bus._running:
+            conversation_event = create_agent_event(
+                StandardEventTypes.AGENT_CONVERSATION_STARTED,
+                session_id,
+                {"session_created_at": new_session.created_at.isoformat() if new_session.created_at else None}
+            )
+            event_bus.publish_sync(conversation_event)
+        
+        return session_id
 
 async def get_messages(session_id: int) -> List[Message]:
     """Retrieve all messages for a session, ordered by timestamp."""
@@ -177,8 +218,25 @@ async def send_message(
 
     # Save user message
     async with SessionLocal() as session:
-        session.add(Message(session_id=session_id, role="user", content=user_message))
+        user_msg = Message(session_id=session_id, role="user", content=user_message)
+        session.add(user_msg)
         await session.commit()
+        await session.refresh(user_msg)
+    
+    # Publish user message received event
+    event_bus = get_event_bus()
+    if event_bus._running:
+        message_event = create_agent_event(
+            StandardEventTypes.AGENT_MESSAGE_RECEIVED,
+            session_id,
+            {
+                "message_id": user_msg.id,
+                "role": "user",
+                "content": user_message[:100] + "..." if len(user_message) > 100 else user_message,
+                "timestamp": user_msg.timestamp.isoformat() if user_msg.timestamp else None
+            }
+        )
+        event_bus.publish_sync(message_event)
 
     # If a specific tool is requested, call it directly
     if tool_name:
@@ -330,6 +388,25 @@ async def push_message(
         session.add(msg)
         await session.commit()
         await session.refresh(msg)
+    
+    # Publish message event
+    event_bus = get_event_bus()
+    if event_bus._running:
+        event_type = (StandardEventTypes.AGENT_MESSAGE_SENT 
+                     if role == "assistant" 
+                     else StandardEventTypes.AGENT_MESSAGE_RECEIVED)
+        message_event = create_agent_event(
+            event_type,
+            session_id,
+            {
+                "message_id": msg.id,
+                "role": role,
+                "content": content[:100] + "..." if len(content) > 100 else content,  # Truncate for events
+                "timestamp": msg.timestamp.isoformat() if msg.timestamp else None
+            }
+        )
+        event_bus.publish_sync(message_event)
+    
     await _notify(session_id, msg)
     return msg
 
