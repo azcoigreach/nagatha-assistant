@@ -181,7 +181,9 @@ def mcp_reload():
         await shutdown_mcp_manager()
         click.echo("Reloading MCP configuration...")
         manager = await get_mcp_manager()
-        click.echo(f"Reloaded with {len(manager.get_available_tools())} tools from {len(manager.sessions)} servers")
+        server_info = manager.get_server_info()
+        connected_servers = len([name for name, info in server_info.items() if info['connected']])
+        click.echo(f"Reloaded with {len(manager.get_available_tools())} tools from {connected_servers} servers")
     
     asyncio.run(_reload())
 

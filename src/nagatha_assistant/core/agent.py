@@ -128,6 +128,16 @@ async def get_mcp_status() -> Dict[str, Any]:
         logging.error(f"Error getting MCP status: {e}")
         return {"error": str(e), "servers": {}, "tools": [], "initialized": False}
 
+async def reload_mcp_configuration() -> Dict[str, Any]:
+    """Reload MCP configuration and return updated status."""
+    try:
+        mcp_manager = await get_mcp_manager()
+        await mcp_manager.reload_configuration()
+        return await get_mcp_status()
+    except Exception as e:
+        logging.error(f"Error reloading MCP configuration: {e}")
+        return {"error": str(e), "servers": {}, "tools": [], "initialized": False}
+
 async def call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Any:
     """Call an MCP tool and return the result."""
     try:
@@ -156,6 +166,133 @@ def format_mcp_status_for_chat(init_summary: Dict[str, Any]) -> str:
             messages.append(f"  • {server_name}: {error}")
     
     return "\n".join(messages)
+
+def _select_relevant_tools(available_tools: List[Dict[str, Any]], user_message: str, max_tools: int = 125) -> List[Dict[str, Any]]:
+    """
+    Select the most relevant tools for a user message, respecting OpenAI's tool limit.
+    
+    Args:
+        available_tools: All available MCP tools
+        user_message: The user's message to analyze for relevance
+        max_tools: Maximum number of tools to return (default 125 to stay under 128 limit)
+    
+    Returns:
+        Filtered list of tools, prioritized by relevance
+    """
+    if len(available_tools) <= max_tools:
+        return available_tools
+    
+    # Keywords that suggest specific tool categories
+    web_keywords = ['search', 'web', 'website', 'url', 'scrape', 'crawl', 'online', 'internet', 'browse']
+    file_keywords = ['file', 'read', 'write', 'directory', 'folder', 'save', 'load', 'path']
+    code_keywords = ['python', 'code', 'script', 'execute', 'run', 'programming', 'function']
+    github_keywords = ['github', 'git', 'repository', 'repo', 'issue', 'pull request', 'commit']
+    memory_keywords = ['remember', 'recall', 'memory', 'knowledge', 'graph', 'entity', 'relationship']
+    time_keywords = ['time', 'date', 'calendar', 'schedule', 'when', 'today', 'tomorrow']
+    thinking_keywords = ['think', 'analyze', 'reason', 'consider', 'evaluate', 'step by step']
+    
+    # Categorize tools by type
+    priority_tools = []
+    web_tools = []
+    file_tools = []
+    code_tools = []
+    github_tools = []
+    memory_tools = []
+    time_tools = []
+    thinking_tools = []
+    other_tools = []
+    
+    user_lower = user_message.lower()
+    
+    for tool in available_tools:
+        tool_name = tool['name'].lower()
+        tool_desc = tool.get('description', '').lower()
+        server_name = tool.get('server', '').lower()
+        
+        # Check for keyword matches in user message
+        has_web_match = any(kw in user_lower for kw in web_keywords)
+        has_file_match = any(kw in user_lower for kw in file_keywords)
+        has_code_match = any(kw in user_lower for kw in code_keywords)
+        has_github_match = any(kw in user_lower for kw in github_keywords)
+        has_memory_match = any(kw in user_lower for kw in memory_keywords)
+        has_time_match = any(kw in user_lower for kw in time_keywords)
+        has_thinking_match = any(kw in user_lower for kw in thinking_keywords)
+        
+        # Categorize tools
+        if any(kw in tool_name or kw in tool_desc for kw in web_keywords) or 'firecrawl' in server_name:
+            if has_web_match:
+                priority_tools.append(tool)
+            else:
+                web_tools.append(tool)
+        elif any(kw in tool_name or kw in tool_desc for kw in file_keywords) or 'filesystem' in server_name:
+            if has_file_match:
+                priority_tools.append(tool)
+            else:
+                file_tools.append(tool)
+        elif any(kw in tool_name or kw in tool_desc for kw in code_keywords):
+            if has_code_match:
+                priority_tools.append(tool)
+            else:
+                code_tools.append(tool)
+        elif any(kw in tool_name or kw in tool_desc for kw in github_keywords) or 'github' in server_name:
+            if has_github_match:
+                priority_tools.append(tool)
+            else:
+                github_tools.append(tool)
+        elif any(kw in tool_name or kw in tool_desc for kw in memory_keywords) or 'memory' in server_name:
+            if has_memory_match:
+                priority_tools.append(tool)
+            else:
+                memory_tools.append(tool)
+        elif any(kw in tool_name or kw in tool_desc for kw in time_keywords) or 'time' in server_name:
+            if has_time_match:
+                priority_tools.append(tool)
+            else:
+                time_tools.append(tool)
+        elif any(kw in tool_name or kw in tool_desc for kw in thinking_keywords) or 'sequential-thinking' in server_name:
+            if has_thinking_match:
+                priority_tools.append(tool)
+            else:
+                thinking_tools.append(tool)
+        else:
+            other_tools.append(tool)
+    
+    # Build final tool list prioritizing matched categories
+    selected_tools = []
+    
+    # Always include priority tools (directly matched to user intent)
+    selected_tools.extend(priority_tools)
+    
+    # Add tools from categories based on user message content
+    remaining_slots = max_tools - len(selected_tools)
+    if remaining_slots > 0:
+        # Distribute remaining slots across relevant categories
+        categories = []
+        if any(kw in user_lower for kw in web_keywords):
+            categories.extend(web_tools)
+        if any(kw in user_lower for kw in file_keywords):
+            categories.extend(file_tools)
+        if any(kw in user_lower for kw in code_keywords):
+            categories.extend(code_tools)
+        if any(kw in user_lower for kw in github_keywords):
+            categories.extend(github_tools)
+        if any(kw in user_lower for kw in memory_keywords):
+            categories.extend(memory_tools)
+        if any(kw in user_lower for kw in time_keywords):
+            categories.extend(time_tools)
+        if any(kw in user_lower for kw in thinking_keywords):
+            categories.extend(thinking_tools)
+        
+        # If no specific category matches, include a balanced mix
+        if not categories:
+            # Include most useful general tools
+            categories = (web_tools[:3] + file_tools[:3] + memory_tools[:3] + 
+                         thinking_tools[:2] + code_tools[:2] + time_tools[:1] + other_tools)
+        
+        selected_tools.extend(categories[:remaining_slots])
+    
+    logging.getLogger(__name__).info(f"Tool selection: {len(available_tools)} available, {len(selected_tools)} selected for user message")
+    return selected_tools
 
 async def send_message(
     session_id: int,
@@ -212,9 +349,12 @@ async def send_message(
             # Call OpenAI with function calling for tool use
             tools = None
             if available_tools:
-                # Convert MCP tools to OpenAI function format
+                # Filter tools to respect OpenAI's 128 tool limit
+                selected_tools = _select_relevant_tools(available_tools, user_message)
+                
+                # Convert selected MCP tools to OpenAI function format
                 tools = []
-                for tool in available_tools:
+                for tool in selected_tools:
                     tool_def = {
                         "type": "function",
                         "function": {
@@ -235,6 +375,8 @@ async def send_message(
                         }
                     
                     tools.append(tool_def)
+                
+                logger.info(f"Prepared {len(tools)} tools for OpenAI (filtered from {len(available_tools)} available)")
 
             # Make the OpenAI call
             call_params = {

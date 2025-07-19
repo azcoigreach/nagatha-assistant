@@ -101,9 +101,10 @@ class ToolsInfoModal(ModalScreen[None]):
     .server-partial { color: $warning; }
     """
     
-    def __init__(self):
+    def __init__(self, startup_status=None):
         super().__init__()
-        self.mcp_status = None
+        self.startup_status = startup_status
+        self.mcp_status = startup_status  # Use startup status as initial data
         self.tools_by_server = {}
     
     def compose(self) -> ComposeResult:
@@ -117,11 +118,11 @@ class ToolsInfoModal(ModalScreen[None]):
                 yield Button("Close", variant="primary", id="close_btn")
     
     async def on_mount(self) -> None:
-        """Load and display the list of MCP servers."""
-        await self.refresh_data()
+        """Initialize the modal with startup MCP server data."""
+        await self.populate_display()
     
-    async def refresh_data(self) -> None:
-        """Refresh the MCP server and tools data."""
+    async def populate_display(self) -> None:
+        """Populate the display with current MCP status data."""
         server_list = self.query_one("#server_list", OptionList)
         tool_details = self.query_one("#tool_details", RichLog)
         
@@ -129,9 +130,12 @@ class ToolsInfoModal(ModalScreen[None]):
         server_list.clear_options()
         tool_details.clear()
         
+        if not self.mcp_status:
+            server_list.add_option(Option("No MCP status available", disabled=True))
+            tool_details.write("No MCP server information available.")
+            return
+        
         try:
-            # Get MCP status including server connection info
-            self.mcp_status = await agent.get_mcp_status()
             tools = self.mcp_status.get('tools', [])
             summary = self.mcp_status.get('summary', {})
             
@@ -188,8 +192,8 @@ class ToolsInfoModal(ModalScreen[None]):
                 tool_details.write("\n[dim]Select a server above to view its tools and capabilities.[/dim]")
                 
         except Exception as e:
-            server_list.add_option(Option(f"Error loading servers: {e}", disabled=True))
-            tool_details.write(f"[red]Error loading MCP data: {e}[/red]")
+            server_list.add_option(Option(f"Error displaying servers: {e}", disabled=True))
+            tool_details.write(f"[red]Error displaying MCP data: {e}[/red]")
     
     async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """Handle server selection to show its tools."""
@@ -232,6 +236,20 @@ class ToolsInfoModal(ModalScreen[None]):
         else:
             tool_details.write(f"[yellow]No tools found for server: {server_name}[/yellow]")
     
+    async def refresh_data(self) -> None:
+        """Reload MCP configuration and refresh the display."""
+        try:
+            # Reload MCP configuration and get updated status
+            self.mcp_status = await agent.reload_mcp_configuration()
+            await self.populate_display()
+        except Exception as e:
+            server_list = self.query_one("#server_list", OptionList)
+            tool_details = self.query_one("#tool_details", RichLog)
+            server_list.clear_options()
+            tool_details.clear()
+            server_list.add_option(Option(f"Error reloading servers: {e}", disabled=True))
+            tool_details.write(f"[red]Error reloading MCP data: {e}[/red]")
+
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button clicks."""
         if event.button.id == "close_btn":
@@ -434,7 +452,7 @@ class ChatApp(App):
     def action_show_tools(self) -> None:
         """Show the tools information modal."""
         try:
-            self.push_screen(ToolsInfoModal())
+            self.push_screen(ToolsInfoModal(self.startup_status))
         except Exception as e:
             logger.exception("Error showing tools information")
             self.chat_log.write(f"[error] Failed to show tools information: {e}")

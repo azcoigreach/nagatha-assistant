@@ -381,6 +381,20 @@ class MCPManager:
         self._initialized = False
         self.logger.info("MCP manager shutdown complete")
 
+    async def reload_configuration(self) -> None:
+        """Reload configuration and reconnect to all servers."""
+        self.logger.info("Reloading MCP configuration...")
+        
+        # Clear existing state
+        self.tools.clear()
+        self.server_statuses.clear()
+        
+        # Reload configuration and reinitialize
+        self._initialized = False
+        await self.initialize()
+        
+        self.logger.info(f"Configuration reloaded with {len(self.get_available_tools())} tools from {len([s for s in self.server_statuses.values() if s.connected])} servers")
+
     def get_available_tools(self) -> List[Dict[str, Any]]:
         """Get a list of all available tools with their metadata."""
         tools = []

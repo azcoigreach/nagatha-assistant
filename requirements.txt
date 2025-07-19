@@ -1,7 +1,9 @@
+openai
 textual
 sqlalchemy
 alembic
 aiohttp
+aiosqlite
 pyperclip
 python-dotenv
 mcp
