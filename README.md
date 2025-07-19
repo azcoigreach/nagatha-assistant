@@ -10,7 +10,8 @@ Nagatha Assistant is a powerful, modular personal AI agent built in Python that 
 - **📋 Task & Reminder System**: Complete task management with priorities, due dates, and automated notifications
 - **🔍 Web Research**: Advanced web scraping, searching, and content analysis via MCP tools
 - **🐘 Mastodon Integration**: User profile analysis and moderation tools for Mastodon instances
-- **💬 Multiple Interfaces**: Command-line, Textual UI, and programmatic API access
+- **🤖 Discord Bot**: Native Discord integration for AI assistance in Discord servers
+- **💬 Multiple Interfaces**: Command-line, Textual UI, Discord, and programmatic API access
 - **📊 Usage Tracking**: Automatic token usage and cost monitoring
 - **🗄️ Database Management**: SQLite with Alembic migrations for schema versioning
 - **🧠 Persistent Memory System**: Cross-session storage with user preferences, facts, command history, and TTL support
@@ -434,6 +435,48 @@ Nagatha works with any MCP-compatible server:
 - **nagatha-mastodon-mcp**: Mastodon user analysis and moderation
 - **memory-mcp**: Knowledge graph and memory management
 - **mcp-server-bootstrap**: Example/template server
+
+## 🤖 Discord Bot Integration
+
+Nagatha includes a Discord bot plugin that allows you to bring AI assistant capabilities directly to your Discord servers. The bot provides:
+
+- **Basic Bot Commands**: Ping, hello, and status commands
+- **Event-Driven Architecture**: Integrated with Nagatha's event system
+- **Secure Token Management**: Environment variable-based configuration
+- **Docker/Cloud Ready**: Designed for containerized deployments
+
+### Quick Discord Setup
+
+1. **Configure your bot token:**
+   ```bash
+   # Add to your .env file
+   DISCORD_BOT_TOKEN=your_bot_token_here
+   DISCORD_GUILD_ID=your_guild_id_here  # Optional
+   DISCORD_COMMAND_PREFIX=!  # Optional, defaults to !
+   ```
+
+2. **Manage the Discord bot:**
+   ```bash
+   # Interactive setup guide
+   nagatha discord setup
+   
+   # Start the bot
+   nagatha discord start
+   
+   # Check status
+   nagatha discord status
+   
+   # Stop the bot
+   nagatha discord stop
+   ```
+
+3. **Test in Discord:**
+   ```
+   !ping    # Bot responds with "Pong!"
+   !hello   # Greeting message
+   ```
+
+For complete setup instructions, bot permissions, Docker deployment, and troubleshooting, see **[docs/DISCORD_SETUP.md](docs/DISCORD_SETUP.md)**.
 
 ## 🧪 Development
 

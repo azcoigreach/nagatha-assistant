@@ -10,3 +10,4 @@ mcp
 mcp-server-time
 pytest
 pytest-cov
+discord.py
