@@ -120,22 +120,22 @@ class MemoryManager:
         await self._storage.set(section, key, value, session_id, expires_at)
         
         # Publish event
-        event_bus = get_event_bus()
-        if event_bus:
-            event = create_memory_event(
-                StandardEventTypes.MEMORY_ENTRY_CREATED,
-                section,
-                key,
-                {
-                    "value_type": type(value).__name__,
-                    "session_id": session_id,
-                    "has_ttl": ttl_seconds is not None
-                }
-            )
-            try:
+        try:
+            event_bus = get_event_bus()
+            if event_bus and event_bus._running:
+                event = create_memory_event(
+                    StandardEventTypes.MEMORY_ENTRY_CREATED,
+                    section,
+                    key,
+                    {
+                        "value_type": type(value).__name__,
+                        "session_id": session_id,
+                        "has_ttl": ttl_seconds is not None
+                    }
+                )
                 await event_bus.publish(event)
-            except Exception as e:
-                logger.warning(f"Failed to publish memory event: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to publish memory event: {e}")
         
         logger.debug(f"Stored memory: {section}/{key} (session: {session_id})")
     
@@ -174,18 +174,18 @@ class MemoryManager:
         
         if deleted:
             # Publish event
-            event_bus = get_event_bus()
-            if event_bus:
-                event = create_memory_event(
-                    StandardEventTypes.MEMORY_ENTRY_DELETED,
-                    section,
-                    key,
-                    {"session_id": session_id}
-                )
-                try:
+            try:
+                event_bus = get_event_bus()
+                if event_bus and event_bus._running:
+                    event = create_memory_event(
+                        StandardEventTypes.MEMORY_ENTRY_DELETED,
+                        section,
+                        key,
+                        {"session_id": session_id}
+                    )
                     await event_bus.publish(event)
-                except Exception as e:
-                    logger.warning(f"Failed to publish memory event: {e}")
+            except Exception as e:
+                logger.warning(f"Failed to publish memory event: {e}")
             
             logger.debug(f"Deleted memory: {section}/{key} (session: {session_id})")
         
@@ -221,22 +221,22 @@ class MemoryManager:
         results = await self._storage.search(section, query, session_id)
         
         # Publish search event
-        event_bus = get_event_bus()
-        if event_bus:
-            event = create_memory_event(
-                StandardEventTypes.MEMORY_SEARCH_PERFORMED,
-                section,
-                None,
-                {
-                    "query": query,
-                    "session_id": session_id,
-                    "result_count": len(results)
-                }
-            )
-            try:
+        try:
+            event_bus = get_event_bus()
+            if event_bus and event_bus._running:
+                event = create_memory_event(
+                    StandardEventTypes.MEMORY_SEARCH_PERFORMED,
+                    section,
+                    None,
+                    {
+                        "query": query,
+                        "session_id": session_id,
+                        "result_count": len(results)
+                    }
+                )
                 await event_bus.publish(event)
-            except Exception as e:
-                logger.warning(f"Failed to publish memory event: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to publish memory event: {e}")
         
         return results
     
@@ -330,9 +330,19 @@ class MemoryManager:
         """Get statistics about memory storage."""
         stats = {}
         
+        # Check predefined sections
         for section_name in self.SECTIONS.keys():
             keys = await self.list_keys(section_name)
             stats[section_name] = len(keys)
+        
+        # Also check for any other sections that might have data
+        # This is a best-effort attempt for in-memory backend
+        if hasattr(self._storage, '_storage'):
+            # InMemoryStorageBackend
+            for section_name in self._storage._storage.keys():
+                if section_name not in stats:
+                    keys = await self.list_keys(section_name)
+                    stats[section_name] = len(keys)
         
         # Add cleanup info
         stats["cleanup_running"] = self._running
