@@ -187,6 +187,385 @@ def mcp_reload():
     
     asyncio.run(_reload())
 
+
+@cli.group()
+def memory():
+    """
+    Memory system management commands.
+    
+    The memory system allows storing and retrieving information across sessions.
+    Data is organized into sections with different persistence levels:
+    
+    - user_preferences: Personal settings and preferences (permanent)
+    - session_state: Current session context (session-scoped)
+    - command_history: History of commands and interactions (permanent)
+    - facts: Long-term knowledge and facts (permanent)
+    - temporary: Short-term data with automatic expiration (TTL-based)
+    """
+    pass
+
+
+@memory.command("set")
+@click.argument("section")
+@click.argument("key")
+@click.argument("value")
+@click.option("--session", "-s", type=int, help="Session ID for session-scoped storage")
+@click.option("--ttl", type=int, help="Time-to-live in seconds (for temporary section)")
+@click.option("--source", help="Source attribution for facts")
+def memory_set(section, key, value, session, ttl, source):
+    """
+    Set a memory value.
+    
+    SECTION: Memory section (user_preferences, session_state, command_history, facts, temporary)
+    KEY: The key to store the value under
+    VALUE: The value to store (JSON strings will be parsed)
+    
+    Examples:
+        nagatha memory set user_preferences theme dark
+        nagatha memory set session_state current_task "writing docs" --session 123
+        nagatha memory set facts meeting_time "9 AM daily" --source "calendar"
+        nagatha memory set temporary api_token "token123" --ttl 3600
+    """
+    async def _set():
+        from nagatha_assistant.core.memory import ensure_memory_manager_started
+        
+        try:
+            # Try to parse value as JSON for complex data types
+            try:
+                import json
+                parsed_value = json.loads(value)
+                click.echo(f"Parsed JSON value: {type(parsed_value).__name__}")
+            except (json.JSONDecodeError, ValueError):
+                # If not JSON, treat as string
+                parsed_value = value
+            
+            memory = await ensure_memory_manager_started()
+            
+            # Handle special section logic
+            if section == "facts" and source:
+                await memory.store_fact(key, parsed_value, source=source)
+            elif ttl is not None:
+                if section != "temporary":
+                    click.echo("Warning: TTL is typically used with 'temporary' section", err=True)
+                await memory.set(section, key, parsed_value, session_id=session, ttl_seconds=ttl)
+            else:
+                await memory.set(section, key, parsed_value, session_id=session)
+            
+            session_info = f" (session {session})" if session else ""
+            ttl_info = f" (expires in {ttl}s)" if ttl else ""
+            source_info = f" (source: {source})" if source else ""
+            click.echo(f"✅ Set {section}/{key}{session_info}{ttl_info}{source_info}")
+            
+        except Exception as e:
+            click.echo(f"❌ Error setting memory: {e}", err=True)
+    
+    asyncio.run(_set())
+
+
+@memory.command("get")
+@click.argument("section")
+@click.argument("key")
+@click.option("--session", "-s", type=int, help="Session ID for session-scoped retrieval")
+@click.option("--default", help="Default value to return if key not found")
+@click.option("--format", "output_format", type=click.Choice(["value", "json", "pretty"]), 
+              default="value", help="Output format")
+def memory_get(section, key, session, default, output_format):
+    """
+    Get a memory value.
+    
+    SECTION: Memory section name
+    KEY: The key to retrieve
+    
+    Examples:
+        nagatha memory get user_preferences theme
+        nagatha memory get session_state current_task --session 123
+        nagatha memory get facts meeting_time --format pretty
+    """
+    async def _get():
+        from nagatha_assistant.core.memory import ensure_memory_manager_started
+        import json
+        
+        try:
+            memory = await ensure_memory_manager_started()
+            
+            if section == "facts":
+                # Special handling for facts to show full fact data
+                value = await memory.get_fact(key)
+                if value is None and default is not None:
+                    click.echo(default)
+                    return
+            else:
+                value = await memory.get(section, key, session_id=session, default=default)
+            
+            if value is None:
+                click.echo(f"❌ Key '{key}' not found in section '{section}'", err=True)
+                return
+            
+            # Format output
+            if output_format == "json":
+                click.echo(json.dumps(value, indent=2, default=str))
+            elif output_format == "pretty":
+                if isinstance(value, dict):
+                    for k, v in value.items():
+                        click.echo(f"{k}: {v}")
+                else:
+                    click.echo(str(value))
+            else:
+                # value format - just the value
+                if isinstance(value, (dict, list)):
+                    click.echo(json.dumps(value, default=str))
+                else:
+                    click.echo(str(value))
+                    
+        except Exception as e:
+            click.echo(f"❌ Error getting memory: {e}", err=True)
+    
+    asyncio.run(_get())
+
+
+@memory.command("list")
+@click.argument("section")
+@click.option("--session", "-s", type=int, help="Session ID for session-scoped listing")
+@click.option("--pattern", help="Pattern to filter keys")
+@click.option("--limit", type=int, default=50, help="Maximum number of keys to show")
+def memory_list(section, session, pattern, limit):
+    """
+    List keys in a memory section.
+    
+    SECTION: Memory section name
+    
+    Examples:
+        nagatha memory list user_preferences
+        nagatha memory list session_state --session 123
+        nagatha memory list facts --pattern "*meeting*"
+    """
+    async def _list():
+        from nagatha_assistant.core.memory import ensure_memory_manager_started
+        
+        try:
+            memory = await ensure_memory_manager_started()
+            keys = await memory.list_keys(section, session_id=session, pattern=pattern)
+            
+            if not keys:
+                session_info = f" (session {session})" if session else ""
+                click.echo(f"No keys found in section '{section}'{session_info}")
+                return
+            
+            # Limit results
+            if len(keys) > limit:
+                click.echo(f"Showing first {limit} of {len(keys)} keys (use --limit to see more):")
+                keys = keys[:limit]
+            else:
+                click.echo(f"Found {len(keys)} key(s) in section '{section}':")
+            
+            for key in keys:
+                click.echo(f"  • {key}")
+                
+        except Exception as e:
+            click.echo(f"❌ Error listing memory: {e}", err=True)
+    
+    asyncio.run(_list())
+
+
+@memory.command("search")
+@click.argument("section")
+@click.argument("query")
+@click.option("--session", "-s", type=int, help="Session ID for session-scoped search")
+@click.option("--limit", type=int, default=20, help="Maximum number of results to show")
+@click.option("--format", "output_format", type=click.Choice(["summary", "full", "keys"]), 
+              default="summary", help="Output format")
+def memory_search(section, query, session, limit, output_format):
+    """
+    Search for values in a memory section.
+    
+    SECTION: Memory section name
+    QUERY: Search query (text to find in stored values)
+    
+    Examples:
+        nagatha memory search facts python
+        nagatha memory search user_preferences theme
+        nagatha memory search command_history help --limit 10
+    """
+    async def _search():
+        from nagatha_assistant.core.memory import ensure_memory_manager_started
+        import json
+        
+        try:
+            memory = await ensure_memory_manager_started()
+            
+            if section == "facts":
+                results = await memory.search_facts(query)
+            else:
+                results = await memory.search(section, query, session_id=session)
+            
+            if not results:
+                click.echo(f"No results found for '{query}' in section '{section}'")
+                return
+            
+            # Limit results
+            if len(results) > limit:
+                click.echo(f"Showing first {limit} of {len(results)} results:")
+                results = results[:limit]
+            else:
+                click.echo(f"Found {len(results)} result(s) for '{query}':")
+            
+            for result in results:
+                key = result.get("key", "unknown")
+                value = result.get("value")
+                
+                if output_format == "keys":
+                    click.echo(f"  • {key}")
+                elif output_format == "full":
+                    click.echo(f"  • {key}:")
+                    if isinstance(value, dict):
+                        for k, v in value.items():
+                            click.echo(f"    {k}: {v}")
+                    else:
+                        click.echo(f"    {value}")
+                    click.echo()
+                else:  # summary
+                    if isinstance(value, dict):
+                        # Show first few fields for dicts
+                        preview = ", ".join(f"{k}={v}" for k, v in list(value.items())[:2])
+                        if len(value) > 2:
+                            preview += "..."
+                        click.echo(f"  • {key}: {{{preview}}}")
+                    elif isinstance(value, str) and len(value) > 60:
+                        click.echo(f"  • {key}: {value[:60]}...")
+                    else:
+                        click.echo(f"  • {key}: {value}")
+                        
+        except Exception as e:
+            click.echo(f"❌ Error searching memory: {e}", err=True)
+    
+    asyncio.run(_search())
+
+
+@memory.command("clear")
+@click.argument("section")
+@click.option("--session", "-s", type=int, help="Session ID for session-scoped clearing")
+@click.option("--confirm", is_flag=True, help="Confirm clearing (required for some sections)")
+@click.option("--key", help="Clear specific key instead of entire section")
+def memory_clear(section, session, confirm, key):
+    """
+    Clear memory data.
+    
+    SECTION: Memory section name
+    
+    Examples:
+        nagatha memory clear temporary
+        nagatha memory clear session_state --session 123
+        nagatha memory clear user_preferences --confirm
+        nagatha memory clear facts --key "old_info"
+    """
+    async def _clear():
+        from nagatha_assistant.core.memory import ensure_memory_manager_started
+        
+        try:
+            memory = await ensure_memory_manager_started()
+            
+            # Safety check for important sections
+            protected_sections = ["user_preferences", "facts", "command_history"]
+            if section in protected_sections and not key and not confirm:
+                click.echo(f"❌ Clearing '{section}' requires --confirm flag for safety", err=True)
+                click.echo(f"Use: nagatha memory clear {section} --confirm")
+                return
+            
+            if key:
+                # Clear specific key
+                deleted = await memory.delete(section, key, session_id=session)
+                if deleted:
+                    session_info = f" (session {session})" if session else ""
+                    click.echo(f"✅ Deleted {section}/{key}{session_info}")
+                else:
+                    click.echo(f"❌ Key '{key}' not found in section '{section}'", err=True)
+            else:
+                # Clear entire section
+                cleared_count = await memory.clear_section(section)
+                session_info = f" (session {session})" if session else ""
+                click.echo(f"✅ Cleared {cleared_count} entries from section '{section}'{session_info}")
+                
+        except Exception as e:
+            click.echo(f"❌ Error clearing memory: {e}", err=True)
+    
+    asyncio.run(_clear())
+
+
+@memory.command("stats")
+@click.argument("section", required=False)
+@click.option("--detailed", is_flag=True, help="Show detailed statistics")
+def memory_stats(section, detailed):
+    """
+    Show memory usage statistics.
+    
+    SECTION: Optional specific section to show stats for
+    
+    Examples:
+        nagatha memory stats
+        nagatha memory stats user_preferences
+        nagatha memory stats --detailed
+    """
+    async def _stats():
+        from nagatha_assistant.core.memory import ensure_memory_manager_started
+        
+        try:
+            memory = await ensure_memory_manager_started()
+            stats = await memory.get_storage_stats()
+            
+            if section:
+                # Show stats for specific section
+                if section in stats:
+                    count = stats[section]
+                    click.echo(f"Section '{section}': {count} entries")
+                    
+                    if detailed:
+                        # Show sample keys
+                        keys = await memory.list_keys(section)
+                        if keys:
+                            click.echo("Sample keys:")
+                            for key in keys[:10]:  # Show first 10
+                                click.echo(f"  • {key}")
+                            if len(keys) > 10:
+                                click.echo(f"  ... and {len(keys) - 10} more")
+                else:
+                    click.echo(f"❌ Section '{section}' not found", err=True)
+            else:
+                # Show all stats
+                click.echo("📊 Memory Usage Statistics:")
+                click.echo()
+                
+                total_entries = 0
+                for section_name, count in stats.items():
+                    if isinstance(count, int):
+                        total_entries += count
+                        click.echo(f"  {section_name}: {count} entries")
+                    else:
+                        click.echo(f"  {section_name}: {count}")
+                
+                click.echo()
+                click.echo(f"Total entries: {total_entries}")
+                
+                if detailed:
+                    click.echo()
+                    click.echo("Section details:")
+                    for section_name in ["user_preferences", "session_state", "command_history", "facts", "temporary"]:
+                        if section_name in stats and isinstance(stats[section_name], int):
+                            count = stats[section_name]
+                            if count > 0:
+                                keys = await memory.list_keys(section_name)
+                                click.echo(f"  {section_name} ({count} entries):")
+                                for key in keys[:3]:  # Show first 3
+                                    click.echo(f"    • {key}")
+                                if len(keys) > 3:
+                                    click.echo(f"    ... and {len(keys) - 3} more")
+                                click.echo()
+                
+        except Exception as e:
+            click.echo(f"❌ Error getting memory stats: {e}", err=True)
+    
+    asyncio.run(_stats())
+
+
 # Command to launch the Textual UI chat client
 @cli.command(name="run")
 def run():

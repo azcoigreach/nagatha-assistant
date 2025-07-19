@@ -13,7 +13,7 @@ Nagatha Assistant is a powerful, modular personal AI agent built in Python that 
 - **💬 Multiple Interfaces**: Command-line, Textual UI, and programmatic API access
 - **📊 Usage Tracking**: Automatic token usage and cost monitoring
 - **🗄️ Database Management**: SQLite with Alembic migrations for schema versioning
-- **🔒 Memory Management**: Cross-session context and conversation history
+- **🧠 Persistent Memory System**: Cross-session storage with user preferences, facts, command history, and TTL support
 - **📈 Background Processing**: Automated scheduler for reminders and notifications
 
 ## 🏗️ Architecture
@@ -226,6 +226,29 @@ nagatha usage                        # Show token usage and costs
 nagatha mcp status                   # Show server status and available tools
 nagatha mcp reload                   # Reconnect to all MCP servers
 ```
+
+#### Memory System
+```bash
+# Set memory values
+nagatha memory set user_preferences theme dark
+nagatha memory set facts meeting_time "9 AM daily" --source "calendar"
+nagatha memory set temporary api_token "token123" --ttl 3600
+
+# Get memory values
+nagatha memory get user_preferences theme
+nagatha memory get facts meeting_time --format pretty
+
+# Search and list
+nagatha memory search facts "meeting"
+nagatha memory list user_preferences
+nagatha memory stats
+
+# Clear data (be careful!)
+nagatha memory clear temporary
+nagatha memory clear facts --key "old_info"
+```
+
+For comprehensive memory system documentation, see **[docs/MEMORY_SYSTEM.md](docs/MEMORY_SYSTEM.md)**.
 
 ### Programmatic API
 

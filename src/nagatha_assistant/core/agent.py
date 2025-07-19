@@ -78,9 +78,26 @@ async def startup() -> Dict[str, Any]:
     
     await init_db()
     
+    # Initialize memory manager
+    try:
+        from .memory import ensure_memory_manager_started
+        await ensure_memory_manager_started()
+        logger.info("Memory manager started")
+    except Exception as e:
+        logger.exception(f"Error starting memory manager: {e}")
+    
     # Initialize MCP manager and get initialization summary
     mcp_manager = await get_mcp_manager()
     init_summary = mcp_manager.get_initialization_summary()
+    
+    # Initialize plugin manager and load plugins
+    try:
+        from .plugin_manager import get_plugin_manager
+        plugin_manager = get_plugin_manager()
+        plugin_results = await plugin_manager.load_and_start_all()
+        logger.info(f"Loaded {len([r for r in plugin_results.values() if r])}/{len(plugin_results)} plugins")
+    except Exception as e:
+        logger.exception(f"Error initializing plugins: {e}")
     
     # Log initialization results
     if init_summary["connected"] > 0:
@@ -102,6 +119,20 @@ async def shutdown() -> None:
         )
         await event_bus.publish(shutdown_event)
     
+    # Shutdown plugin manager
+    try:
+        from .plugin_manager import shutdown_plugin_manager
+        await shutdown_plugin_manager()
+    except Exception as e:
+        logging.exception(f"Error shutting down plugins: {e}")
+    
+    # Shutdown memory manager
+    try:
+        from .memory import shutdown_memory_manager
+        await shutdown_memory_manager()
+    except Exception as e:
+        logging.exception(f"Error shutting down memory manager: {e}")
+    
     await shutdown_mcp_manager()
     
     # Stop the event bus
@@ -112,6 +143,22 @@ async def start_session() -> int:
     await init_db()
     # Ensure MCP is initialized
     await get_mcp_manager()
+    
+    # Ensure memory manager is started
+    try:
+        from .memory import ensure_memory_manager_started
+        await ensure_memory_manager_started()
+    except Exception as e:
+        logging.exception(f"Error ensuring memory manager is started: {e}")
+    
+    # Ensure plugins are initialized
+    try:
+        from .plugin_manager import get_plugin_manager
+        plugin_manager = get_plugin_manager()
+        if not plugin_manager._plugins:  # Only load if not already loaded
+            await plugin_manager.load_and_start_all()
+    except Exception as e:
+        logging.exception(f"Error ensuring plugins are loaded: {e}")
     
     async with SessionLocal() as session:
         new_session = ConversationSession()

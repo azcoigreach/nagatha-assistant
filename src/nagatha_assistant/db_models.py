@@ -128,3 +128,45 @@ Tag.tasks = relationship(
     back_populates="tags",
     cascade="all",
 )
+
+# ---------------------------------------------------------------------------
+# Memory System models
+# ---------------------------------------------------------------------------
+
+class MemorySection(Base):
+    """Represents different memory sections with different persistence levels."""
+    __tablename__ = "memory_sections"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), unique=True, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    persistence_level = Column(String(50), nullable=False, server_default="permanent")  # temporary, session, permanent
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    memory_entries = relationship("MemoryEntry", back_populates="section", cascade="all, delete-orphan")
+
+
+class MemoryEntry(Base):
+    """Represents individual memory entries in the system."""
+    __tablename__ = "memory_entries"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    section_id = Column(Integer, ForeignKey("memory_sections.id"), nullable=False)
+    key = Column(String(255), nullable=False, index=True)
+    value_type = Column(String(50), nullable=False, server_default="string")  # string, json, binary
+    value = Column(Text, nullable=True)  # JSON serialized or string value
+    session_id = Column(Integer, ForeignKey("conversation_sessions.id"), nullable=True)  # For session-scoped memory
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True)  # For temporary memory
+    
+    # Relationships
+    section = relationship("MemorySection", back_populates="memory_entries")
+    session = relationship("ConversationSession", foreign_keys=[session_id])
+    
+    # Unique constraint for key within a section and session (if applicable)
+    __table_args__ = (
+        # For session-scoped memory, key must be unique within section and session
+        # For global memory, key must be unique within section
+    )
