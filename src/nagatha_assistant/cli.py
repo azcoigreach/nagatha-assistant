@@ -566,6 +566,145 @@ def memory_stats(section, detailed):
     asyncio.run(_stats())
 
 
+@cli.group()
+def discord():
+    """
+    Discord bot management commands.
+    """
+    pass
+
+
+@discord.command("start")
+def discord_start():
+    """
+    Start the Discord bot.
+    """
+    async def _start():
+        try:
+            from nagatha_assistant.core.plugin_manager import get_plugin_manager
+            
+            # Get the plugin manager
+            plugin_manager = get_plugin_manager()
+            
+            # Initialize if needed
+            if not plugin_manager._initialized:
+                await plugin_manager.initialize()
+            
+            # Get the Discord bot plugin
+            discord_plugin = plugin_manager.get_plugin("discord_bot")
+            if not discord_plugin:
+                click.echo("❌ Discord bot plugin not found or not enabled", err=True)
+                return
+            
+            # Start the Discord bot
+            result = await discord_plugin.start_discord_bot()
+            click.echo(result)
+            
+        except Exception as e:
+            click.echo(f"❌ Error starting Discord bot: {e}", err=True)
+    
+    asyncio.run(_start())
+
+
+@discord.command("stop")
+def discord_stop():
+    """
+    Stop the Discord bot.
+    """
+    async def _stop():
+        try:
+            from nagatha_assistant.core.plugin_manager import get_plugin_manager
+            
+            plugin_manager = get_plugin_manager()
+            discord_plugin = plugin_manager.get_plugin("discord_bot")
+            
+            if not discord_plugin:
+                click.echo("❌ Discord bot plugin not found", err=True)
+                return
+            
+            result = await discord_plugin.stop_discord_bot()
+            click.echo(result)
+            
+        except Exception as e:
+            click.echo(f"❌ Error stopping Discord bot: {e}", err=True)
+    
+    asyncio.run(_stop())
+
+
+@discord.command("status")
+def discord_status():
+    """
+    Get the Discord bot status.
+    """
+    async def _status():
+        try:
+            from nagatha_assistant.core.plugin_manager import get_plugin_manager
+            
+            plugin_manager = get_plugin_manager()
+            
+            # Check if plugin manager is initialized
+            if not plugin_manager._initialized:
+                await plugin_manager.initialize()
+            
+            discord_plugin = plugin_manager.get_plugin("discord_bot")
+            
+            if not discord_plugin:
+                click.echo("❌ Discord bot plugin not found or not enabled")
+                return
+            
+            result = await discord_plugin.get_discord_status()
+            click.echo(result)
+            
+        except Exception as e:
+            click.echo(f"❌ Error getting Discord bot status: {e}", err=True)
+    
+    asyncio.run(_status())
+
+
+@discord.command("setup")
+def discord_setup():
+    """
+    Interactive setup for Discord bot configuration.
+    """
+    click.echo("Discord Bot Setup")
+    click.echo("=" * 17)
+    click.echo()
+    
+    # Check current configuration
+    token = os.getenv('DISCORD_BOT_TOKEN')
+    guild_id = os.getenv('DISCORD_GUILD_ID')
+    prefix = os.getenv('DISCORD_COMMAND_PREFIX', '!')
+    
+    if token:
+        masked_token = token[:8] + "..." if len(token) > 8 else "***"
+        click.echo(f"Current bot token: {masked_token}")
+    else:
+        click.echo("Bot token: Not configured")
+    
+    click.echo(f"Guild ID: {guild_id or 'Not configured'}")
+    click.echo(f"Command prefix: {prefix}")
+    click.echo()
+    
+    # Setup instructions
+    click.echo("To set up your Discord bot:")
+    click.echo()
+    click.echo("1. Go to https://discord.com/developers/applications")
+    click.echo("2. Create a new application")
+    click.echo("3. Go to the 'Bot' section")
+    click.echo("4. Create a bot and copy the token")
+    click.echo("5. Enable 'Message Content Intent' in the bot settings")
+    click.echo("6. Add the bot to your server with appropriate permissions")
+    click.echo()
+    click.echo("Required environment variables in your .env file:")
+    click.echo("DISCORD_BOT_TOKEN=your_bot_token_here")
+    click.echo("DISCORD_GUILD_ID=your_guild_id_here  # Optional")
+    click.echo("DISCORD_COMMAND_PREFIX=!  # Optional, defaults to !")
+    click.echo()
+    
+    if not token:
+        click.echo("❌ Please configure DISCORD_BOT_TOKEN in your .env file to use the Discord bot")
+
+
 # Command to launch the Textual UI chat client
 @cli.command(name="run")
 def run():
