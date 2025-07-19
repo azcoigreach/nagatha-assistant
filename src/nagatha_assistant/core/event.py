@@ -85,6 +85,15 @@ class StandardEventTypes:
     NOTE_CREATED = "note.created"
     NOTE_UPDATED = "note.updated"
     NOTE_DELETED = "note.deleted"
+    
+    # Memory events
+    MEMORY_SECTION_CREATED = "memory.section.created"
+    MEMORY_SECTION_UPDATED = "memory.section.updated"
+    MEMORY_SECTION_DELETED = "memory.section.deleted"
+    MEMORY_ENTRY_CREATED = "memory.entry.created"
+    MEMORY_ENTRY_UPDATED = "memory.entry.updated"
+    MEMORY_ENTRY_DELETED = "memory.entry.deleted"
+    MEMORY_SEARCH_PERFORMED = "memory.search.performed"
 
 
 def create_system_event(event_type: str, data: Optional[Dict[str, Any]] = None, 
@@ -126,4 +135,22 @@ def create_mcp_event(event_type: str, server_name: str, tool_data: Optional[Dict
         data=data,
         priority=priority,
         source="mcp"
+    )
+
+
+def create_memory_event(event_type: str, section_name: str, key: Optional[str] = None,
+                       memory_data: Optional[Dict[str, Any]] = None,
+                       priority: EventPriority = EventPriority.NORMAL) -> Event:
+    """Helper function to create memory-related events."""
+    data = {"section_name": section_name}
+    if key:
+        data["key"] = key
+    if memory_data:
+        data.update(memory_data)
+    
+    return Event(
+        event_type=event_type,
+        data=data,
+        priority=priority,
+        source="memory"
     )
