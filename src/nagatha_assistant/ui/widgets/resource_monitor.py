@@ -220,24 +220,32 @@ class TokenUsageMetrics:
             total_output = 0
             total_cost = 0.0
             request_count = 0
+            today_cost = 0.0
+            
+            from datetime import datetime
+            today = datetime.now().strftime('%Y-%m-%d')
             
             for model, data in usage_data.items():
-                total_input += data.get('input_tokens', 0)
-                total_output += data.get('output_tokens', 0)
-                total_cost += data.get('cost', 0.0)
+                # Use the correct field names from usage tracker
+                total_input += data.get('prompt_tokens', 0)  # prompt_tokens = input_tokens
+                total_output += data.get('completion_tokens', 0)  # completion_tokens = output_tokens
+                total_cost += data.get('cost_usd', 0.0)
                 request_count += data.get('requests', 0)
+                
+                # Get today's cost from daily usage
+                daily_usage = data.get('daily_usage', {})
+                if today in daily_usage:
+                    today_cost += daily_usage[today].get('cost_usd', 0.0)
             
             metrics.total_input_tokens = total_input
             metrics.total_output_tokens = total_output
             metrics.total_cost = total_cost
             metrics.requests_count = request_count
+            metrics.today_cost = today_cost
             
             if metrics.requests_count > 0:
                 total_tokens = metrics.total_input_tokens + metrics.total_output_tokens
                 metrics.average_tokens_per_request = total_tokens / metrics.requests_count
-            
-            # For now, set today's cost to total cost (simplified)
-            metrics.today_cost = total_cost
             
         except Exception as e:
             logger.warning(f"Error collecting token usage metrics: {e}")
@@ -615,7 +623,7 @@ class ResourceMonitor(Vertical):
             )
             token_summary.update(summary_text)
             
-            # Update table
+            # Update table with more detailed breakdown
             token_table.clear()
             token_table.add_row(
                 "Total", 
@@ -630,7 +638,7 @@ class ResourceMonitor(Vertical):
             token_table.add_row(
                 "Requests",
                 str(metrics.requests_count),
-                f"${(metrics.total_cost/metrics.requests_count):.4f}/req" if metrics.requests_count > 0 else "$0.00/req"
+                f"${(metrics.total_cost/metrics.requests_count):.4f}/req" if metrics.requests_count > 0 else "$0.0000/req"
             )
             
         except Exception as e:
