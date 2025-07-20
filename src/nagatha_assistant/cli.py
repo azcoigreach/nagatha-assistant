@@ -600,6 +600,18 @@ def discord_start():
             result = await discord_plugin.start_discord_bot()
             click.echo(result)
             
+            # Keep the bot running
+            if "started successfully" in result.lower():
+                click.echo("🔄 Discord bot is now running. Press Ctrl+C to stop.")
+                try:
+                    # Keep the event loop running
+                    while discord_plugin.is_running:
+                        await asyncio.sleep(1)
+                except KeyboardInterrupt:
+                    click.echo("\n🛑 Stopping Discord bot...")
+                    await discord_plugin.stop_discord_bot()
+                    click.echo("✅ Discord bot stopped.")
+            
         except Exception as e:
             click.echo(f"❌ Error starting Discord bot: {e}", err=True)
     

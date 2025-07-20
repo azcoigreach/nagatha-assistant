@@ -36,6 +36,7 @@ class NagathaDiscordBot(commands.Bot):
     async def on_ready(self):
         """Called when the bot has successfully connected to Discord."""
         logger.info(f'Discord bot logged in as {self.user} (ID: {self.user.id})')
+        logger.info(f'Connected to {len(self.guilds)} guild(s): {[guild.name for guild in self.guilds]}')
         
         # Publish bot ready event
         event = create_system_event(
@@ -213,9 +214,12 @@ class DiscordBotPlugin(SimplePlugin):
             return "Discord bot token not configured"
         
         try:
+            logger.info("Starting Discord bot initialization...")
+            
             # Configure Discord intents
             intents = discord.Intents.default()
             intents.message_content = True  # Required for message content access
+            logger.debug("Discord intents configured")
             
             # Create bot instance
             self.bot = NagathaDiscordBot(
@@ -224,6 +228,7 @@ class DiscordBotPlugin(SimplePlugin):
                 intents=intents,
                 help_command=None  # Disable default help command
             )
+            logger.debug("Discord bot instance created")
             
             # Add a simple ping command
             @self.bot.command(name='ping')
@@ -236,9 +241,12 @@ class DiscordBotPlugin(SimplePlugin):
                 """Say hello to users."""
                 await ctx.send(f'Hello {ctx.author.mention}! I\'m Nagatha, your AI assistant.')
             
+            logger.debug("Discord bot commands registered")
+            
             # Start the bot in a background task
             self._bot_task = asyncio.create_task(self._run_bot())
             self.is_running = True
+            logger.info("Discord bot task created and marked as running")
             
             # Publish bot start event
             event = create_system_event(
@@ -253,7 +261,13 @@ class DiscordBotPlugin(SimplePlugin):
             
         except Exception as e:
             logger.error(f"Failed to start Discord bot: {e}")
+            logger.exception("Full traceback for Discord bot startup failure:")
             self.is_running = False
+            
+            # Check if it's a privileged intents error
+            if "privileged intents" in str(e).lower():
+                return "Discord bot failed to start: Privileged intents not enabled. Please go to https://discord.com/developers/applications/, select your bot, go to the 'Bot' section, and enable 'Message Content Intent' under 'Privileged Gateway Intents'."
+            
             return f"Failed to start Discord bot: {str(e)}"
     
     async def stop_discord_bot(self, **kwargs) -> str:
@@ -318,15 +332,75 @@ class DiscordBotPlugin(SimplePlugin):
     async def _run_bot(self):
         """Internal method to run the Discord bot."""
         try:
+            logger.info(f"Attempting to connect to Discord with token: {self.token[:10]}...")
             await self.bot.start(self.token)
-        except Exception as e:
-            logger.error(f"Discord bot crashed: {e}")
+        except discord.PrivilegedIntentsRequired as e:
+            logger.error(f"Discord bot privileged intents not enabled: {e}")
+            logger.error("To fix this, go to https://discord.com/developers/applications/")
+            logger.error("Select your bot application, go to the 'Bot' section,")
+            logger.error("and enable 'Message Content Intent' under 'Privileged Gateway Intents'")
             self.is_running = False
             
             # Publish bot error event
             event = create_system_event(
                 "discord.bot.crashed",
-                {"error": str(e)},
+                {"error": f"Privileged intents not enabled: {str(e)}"},
+                source="discord_bot_plugin"
+            )
+            await self.publish_event(event)
+        except discord.LoginFailure as e:
+            logger.error(f"Discord bot login failed - invalid token: {e}")
+            self.is_running = False
+            
+            # Publish bot error event
+            event = create_system_event(
+                "discord.bot.crashed",
+                {"error": f"Login failure: {str(e)}"},
+                source="discord_bot_plugin"
+            )
+            await self.publish_event(event)
+        except discord.HTTPException as e:
+            logger.error(f"Discord bot HTTP error: {e}")
+            self.is_running = False
+            
+            # Publish bot error event
+            event = create_system_event(
+                "discord.bot.crashed",
+                {"error": f"HTTP error: {str(e)}"},
+                source="discord_bot_plugin"
+            )
+            await self.publish_event(event)
+        except discord.GatewayNotFound as e:
+            logger.error(f"Discord bot gateway not found: {e}")
+            self.is_running = False
+            
+            # Publish bot error event
+            event = create_system_event(
+                "discord.bot.crashed",
+                {"error": f"Gateway not found: {str(e)}"},
+                source="discord_bot_plugin"
+            )
+            await self.publish_event(event)
+        except discord.ConnectionClosed as e:
+            logger.error(f"Discord bot connection closed: {e}")
+            self.is_running = False
+            
+            # Publish bot error event
+            event = create_system_event(
+                "discord.bot.crashed",
+                {"error": f"Connection closed: {str(e)}"},
+                source="discord_bot_plugin"
+            )
+            await self.publish_event(event)
+        except Exception as e:
+            logger.error(f"Discord bot crashed with unexpected error: {e}")
+            logger.exception("Full traceback:")
+            self.is_running = False
+            
+            # Publish bot error event
+            event = create_system_event(
+                "discord.bot.crashed",
+                {"error": f"Unexpected error: {str(e)}"},
                 source="discord_bot_plugin"
             )
             await self.publish_event(event)
