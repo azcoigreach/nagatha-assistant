@@ -577,11 +577,36 @@ def discord():
 @discord.command("start")
 def discord_start():
     """
-    Start the Discord bot.
+    Start the Discord bot in the background.
     """
-    async def _start():
+    from nagatha_assistant.utils.daemon import DaemonManager
+    import os
+    
+    # Check if Discord token is configured
+    if not os.getenv('DISCORD_BOT_TOKEN'):
+        click.echo("❌ Discord bot token not configured", err=True)
+        click.echo("Set DISCORD_BOT_TOKEN in your .env file or environment")
+        return
+    
+    # Create daemon manager
+    daemon = DaemonManager("discord_bot")
+    
+    # Check if already running
+    if daemon.is_running():
+        click.echo("❌ Discord bot is already running")
+        click.echo("Use 'nagatha discord status' to check status or 'nagatha discord stop' to stop it")
+        return
+    
+    async def _run_discord_daemon():
+        """Run the Discord bot in daemon mode."""
+        import asyncio
         try:
             from nagatha_assistant.core.plugin_manager import get_plugin_manager
+            from nagatha_assistant.utils.logger import setup_logger_with_env_control
+            
+            # Set up logging for daemon
+            logger = setup_logger_with_env_control()
+            logger.info("Starting Discord bot daemon")
             
             # Get the plugin manager
             plugin_manager = get_plugin_manager()
@@ -593,59 +618,60 @@ def discord_start():
             # Get the Discord bot plugin
             discord_plugin = plugin_manager.get_plugin("discord_bot")
             if not discord_plugin:
-                click.echo("❌ Discord bot plugin not found or not enabled", err=True)
+                logger.error("Discord bot plugin not found or not enabled")
                 return
             
             # Start the Discord bot
             result = await discord_plugin.start_discord_bot()
-            click.echo(result)
+            logger.info(f"Discord bot start result: {result}")
             
-            # Keep the bot running
+            # Keep the bot running indefinitely
             if "started successfully" in result.lower():
-                click.echo("🔄 Discord bot is now running. Press Ctrl+C to stop.")
+                logger.info("Discord bot daemon running, waiting for termination signal")
                 try:
-                    # Keep the event loop running
+                    # Keep the event loop running until the daemon is terminated
                     while discord_plugin.is_running:
                         await asyncio.sleep(1)
-                except KeyboardInterrupt:
-                    click.echo("\n🛑 Stopping Discord bot...")
+                except (KeyboardInterrupt, SystemExit):
+                    logger.info("Discord bot daemon received termination signal")
                     await discord_plugin.stop_discord_bot()
-                    click.echo("✅ Discord bot stopped.")
-            
+                    logger.info("Discord bot daemon stopped")
+            else:
+                logger.error(f"Failed to start Discord bot: {result}")
+                
         except Exception as e:
-            click.echo(f"❌ Error starting Discord bot: {e}", err=True)
+            logger.error(f"Discord bot daemon crashed: {e}")
+            logger.exception("Full traceback:")
     
-    asyncio.run(_start())
+    # Start the daemon
+    if daemon.start_daemon(_run_discord_daemon):
+        click.echo("✅ Discord bot started successfully in the background")
+        click.echo("Use 'nagatha discord status' to check status")
+        click.echo("Use 'nagatha discord stop' to stop the bot")
+    else:
+        click.echo("❌ Failed to start Discord bot daemon", err=True)
 
 
 @discord.command("stop")
 def discord_stop():
     """
-    Stop the Discord bot.
+    Stop the Discord bot running in the background.
     """
-    async def _stop():
-        try:
-            from nagatha_assistant.core.plugin_manager import get_plugin_manager
-            
-            plugin_manager = get_plugin_manager()
-            
-            # Initialize if needed
-            if not plugin_manager._initialized:
-                await plugin_manager.initialize()
-            
-            discord_plugin = plugin_manager.get_plugin("discord_bot")
-            
-            if not discord_plugin:
-                click.echo("❌ Discord bot plugin not found", err=True)
-                return
-            
-            result = await discord_plugin.stop_discord_bot()
-            click.echo(result)
-            
-        except Exception as e:
-            click.echo(f"❌ Error stopping Discord bot: {e}", err=True)
+    from nagatha_assistant.utils.daemon import DaemonManager
     
-    asyncio.run(_stop())
+    # Create daemon manager
+    daemon = DaemonManager("discord_bot")
+    
+    # Check if running
+    if not daemon.is_running():
+        click.echo("❌ Discord bot is not running")
+        return
+    
+    # Stop the daemon
+    if daemon.stop_daemon():
+        click.echo("✅ Discord bot stopped successfully")
+    else:
+        click.echo("❌ Failed to stop Discord bot", err=True)
 
 
 @discord.command("status")
@@ -653,29 +679,36 @@ def discord_status():
     """
     Get the Discord bot status.
     """
-    async def _status():
-        try:
-            from nagatha_assistant.core.plugin_manager import get_plugin_manager
-            
-            plugin_manager = get_plugin_manager()
-            
-            # Check if plugin manager is initialized
-            if not plugin_manager._initialized:
-                await plugin_manager.initialize()
-            
-            discord_plugin = plugin_manager.get_plugin("discord_bot")
-            
-            if not discord_plugin:
-                click.echo("❌ Discord bot plugin not found or not enabled")
-                return
-            
-            result = await discord_plugin.get_discord_status()
-            click.echo(result)
-            
-        except Exception as e:
-            click.echo(f"❌ Error getting Discord bot status: {e}", err=True)
+    from nagatha_assistant.utils.daemon import DaemonManager
+    import datetime
     
-    asyncio.run(_status())
+    # Create daemon manager
+    daemon = DaemonManager("discord_bot")
+    
+    # Get detailed status
+    status = daemon.get_status()
+    
+    if not status["running"]:
+        click.echo("❌ Discord bot: Stopped")
+        return
+    
+    # Format detailed status
+    click.echo("✅ Discord bot: Running")
+    click.echo(f"   PID: {status['pid']}")
+    click.echo(f"   Status: {status['status']}")
+    
+    if "memory" in status:
+        memory_mb = status["memory"] / (1024 * 1024)
+        click.echo(f"   Memory: {memory_mb:.1f} MB")
+    
+    if "cpu_percent" in status:
+        click.echo(f"   CPU: {status['cpu_percent']:.1f}%")
+    
+    if "create_time" in status:
+        start_time = datetime.datetime.fromtimestamp(status["create_time"])
+        uptime = datetime.datetime.now() - start_time
+        click.echo(f"   Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        click.echo(f"   Uptime: {str(uptime).split('.')[0]}")  # Remove microseconds
 
 
 @discord.command("setup")
