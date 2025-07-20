@@ -524,6 +524,110 @@ class DiscordBotPlugin(SimplePlugin):
                 f"❌ Error getting help: {str(e)}"
             )
     
+    def add_slash_command(self, name: str, description: str, handler: callable, **kwargs) -> bool:
+        """
+        Add a custom slash command from a plugin or MCP server.
+        
+        Args:
+            name: Command name
+            description: Command description  
+            handler: Async function to handle the command
+            **kwargs: Additional app_commands.command parameters
+            
+        Returns:
+            True if registered successfully, False otherwise
+        """
+        if not self.bot:
+            logger.warning("Cannot add slash command: bot not initialized")
+            return False
+        
+        try:
+            # Create the app command
+            @app_commands.command(name=name, description=description, **kwargs)
+            async def custom_command(interaction: discord.Interaction):
+                try:
+                    await handler(interaction)
+                except Exception as e:
+                    logger.exception(f"Error in custom slash command {name}: {e}")
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message(
+                            f"❌ Command error: {str(e)}", ephemeral=True
+                        )
+                    else:
+                        await interaction.followup.send(
+                            f"❌ Command error: {str(e)}", ephemeral=True
+                        )
+            
+            # Add to bot tree
+            self.bot.tree.add_command(custom_command)
+            
+            logger.info(f"Added custom slash command: /{name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to add slash command {name}: {e}")
+            return False
+    
+    def remove_slash_command(self, name: str) -> bool:
+        """
+        Remove a custom slash command.
+        
+        Args:
+            name: Command name to remove
+            
+        Returns:
+            True if removed successfully, False otherwise
+        """
+        if not self.bot:
+            return False
+        
+        try:
+            self.bot.tree.remove_command(name)
+            logger.info(f"Removed slash command: /{name}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to remove slash command {name}: {e}")
+            return False
+    
+    async def sync_slash_commands(self, guild_id: Optional[int] = None) -> int:
+        """
+        Manually sync slash commands with Discord.
+        
+        Args:
+            guild_id: Guild ID to sync to (None for global sync)
+            
+        Returns:
+            Number of commands synced
+        """
+        if not self.bot:
+            return 0
+        
+        try:
+            if guild_id:
+                guild = self.bot.get_guild(guild_id)
+                if guild:
+                    synced = await self.bot.tree.sync(guild=guild)
+                    logger.info(f"Synced {len(synced)} slash commands to guild {guild.name}")
+                    return len(synced)
+                else:
+                    logger.warning(f"Guild {guild_id} not found")
+                    return 0
+            else:
+                synced = await self.bot.tree.sync()
+                logger.info(f"Synced {len(synced)} slash commands globally")
+                return len(synced)
+                
+        except Exception as e:
+            logger.error(f"Failed to sync slash commands: {e}")
+            return 0
+    
+    def get_slash_command_names(self) -> List[str]:
+        """Get list of registered slash command names."""
+        if not self.bot:
+            return []
+        
+        return [cmd.name for cmd in self.bot.tree.get_commands()]
+    
     async def _run_bot(self):
         """Internal method to run the Discord bot."""
         try:
