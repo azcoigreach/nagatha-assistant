@@ -56,6 +56,36 @@ async def init_db() -> None:
     """Ensure the database schema is up-to-date."""
     await ensure_schema()
 
+
+async def _autonomous_memory_maintenance_loop() -> None:
+    """Background task for autonomous memory maintenance."""
+    logger = setup_logger_with_env_control()
+    
+    while True:
+        try:
+            # Wait 1 hour between maintenance cycles
+            await asyncio.sleep(3600)
+            
+            from .memory import get_memory_maintenance
+            memory_maintenance = get_memory_maintenance()
+            
+            # Perform maintenance
+            results = await memory_maintenance.perform_maintenance()
+            
+            if any(results.values()):
+                logger.info(f"Memory maintenance completed: {results}")
+            else:
+                logger.debug("Memory maintenance completed: no actions needed")
+                
+        except asyncio.CancelledError:
+            logger.info("Memory maintenance loop cancelled")
+            break
+        except Exception as e:
+            logger.exception(f"Error in memory maintenance loop: {e}")
+            # Wait before retrying on error
+            await asyncio.sleep(300)  # 5 minutes
+
+
 async def startup() -> Dict[str, Any]:
     """
     Initialize the application and return initialization status.
@@ -83,6 +113,11 @@ async def startup() -> Dict[str, Any]:
         from .memory import ensure_memory_manager_started
         await ensure_memory_manager_started()
         logger.info("Memory manager started")
+        
+        # Start autonomous memory maintenance task
+        asyncio.create_task(_autonomous_memory_maintenance_loop())
+        logger.info("Autonomous memory maintenance started")
+        
     except Exception as e:
         logger.exception(f"Error starting memory manager: {e}")
     
@@ -477,6 +512,34 @@ async def send_message(
         )
         event_bus.publish_sync(message_event)
 
+    # Autonomous memory processing for user message
+    try:
+        from .memory import get_memory_trigger, get_contextual_recall, get_personality_memory
+        
+        # Analyze user message for autonomous storage
+        memory_trigger = get_memory_trigger()
+        context = {"session_id": session_id, "message_id": user_msg.id}
+        
+        storage_analysis = await memory_trigger.analyze_for_storage(user_message, context)
+        
+        if storage_analysis["should_store"]:
+            logger.debug(f"Autonomous memory: storing {len(storage_analysis['entries'])} items from user message")
+            
+            # Store identified entries
+            for entry in storage_analysis["entries"]:
+                await memory_trigger.memory_manager.set(
+                    section=entry["section"],
+                    key=entry["key"],
+                    value=entry["value"],
+                    session_id=entry.get("session_id"),
+                    ttl_seconds=entry.get("ttl_seconds")
+                )
+        else:
+            logger.debug(f"Autonomous memory: not storing user message - {storage_analysis['reason']}")
+    
+    except Exception as e:
+        logger.warning(f"Error in autonomous memory processing: {e}")
+
     # If a specific tool is requested, call it directly
     if tool_name:
         try:
@@ -494,10 +557,66 @@ async def send_message(
             messages = await get_messages(session_id)
             conversation_history = []
             
-            # Get available tools and create system prompt
+            # Get available tools and create enhanced system prompt with memory context
             available_tools = await get_available_tools()
-            system_prompt = get_system_prompt(available_tools)
-            conversation_history.append({"role": "system", "content": system_prompt})
+            
+            # Enhanced system prompt with contextual memory and personality adaptation
+            try:
+                from .memory import get_contextual_recall, get_personality_memory
+                
+                contextual_recall = get_contextual_recall()
+                personality_memory = get_personality_memory()
+                
+                # Get relevant memories based on user message context
+                relevant_memories = await contextual_recall.get_relevant_memories(
+                    user_message, session_id, max_results=5
+                )
+                
+                # Get personality adaptations
+                personality_adaptations = await personality_memory.adapt_to_context(
+                    user_message, session_id
+                )
+                
+                # Create base system prompt
+                base_system_prompt = get_system_prompt(available_tools)
+                
+                # Enhance with memory context
+                memory_context = ""
+                if any(relevant_memories.values()):
+                    memory_context += "\n\n## Relevant Context from Our History:\n"
+                    
+                    for section, memories in relevant_memories.items():
+                        if memories:
+                            memory_context += f"\n**{section.replace('_', ' ').title()}:**\n"
+                            for memory in memories[:3]:  # Limit to top 3 per section
+                                if isinstance(memory.get("value"), dict):
+                                    if "text" in memory["value"]:
+                                        memory_context += f"- {memory['value']['text']}\n"
+                                    elif "fact" in memory["value"]:
+                                        memory_context += f"- {memory['value']['fact']}\n"
+                                    elif "task" in memory["value"]:
+                                        memory_context += f"- Current focus: {memory['value']['task']}\n"
+                
+                # Enhance with personality adaptations
+                if personality_adaptations:
+                    personality_context = "\n\n## Interaction Guidance for This Context:\n"
+                    personality_context += f"- **Tone**: {personality_adaptations.get('tone', 'warm and professional')}\n"
+                    personality_context += f"- **Detail Level**: {personality_adaptations.get('detail_level', 'balanced')}\n"
+                    personality_context += f"- **Formality**: {personality_adaptations.get('formality', 'casual-professional')}\n"
+                    personality_context += f"- **Response Style**: {personality_adaptations.get('response_style', 'helpful and engaging')}\n"
+                    
+                    memory_context += personality_context
+                
+                # Combine base prompt with memory context
+                enhanced_system_prompt = base_system_prompt + memory_context
+                
+                logger.debug(f"Enhanced system prompt with {len(relevant_memories)} memory sections and personality adaptations")
+                
+            except Exception as e:
+                logger.warning(f"Error enhancing system prompt with memory context: {e}")
+                enhanced_system_prompt = get_system_prompt(available_tools)
+            
+            conversation_history.append({"role": "system", "content": enhanced_system_prompt})
             
             # Add message history (excluding the latest user message which we already have)
             for msg in messages[:-1]:  # Exclude the last message we just saved
@@ -612,6 +731,46 @@ async def send_message(
         session.add(bot)
         await session.commit()
         await session.refresh(bot)
+
+    # Autonomous memory processing for assistant response
+    try:
+        from .memory import get_memory_trigger, get_memory_learning
+        
+        # Analyze assistant response for memory insights
+        memory_trigger = get_memory_trigger()
+        memory_learning = get_memory_learning()
+        
+        context = {
+            "session_id": session_id, 
+            "message_id": bot.id,
+            "user_message": user_message,
+            "is_assistant_response": True
+        }
+        
+        # Learn from successful interaction patterns
+        await memory_learning.learn_from_feedback(
+            "interaction_pattern",
+            f"User: {user_message[:100]}... | Assistant: {assistant_msg[:100]}...",
+            context
+        )
+        
+        # Store any self-awareness or personality insights from assistant response
+        storage_analysis = await memory_trigger.analyze_for_storage(assistant_msg, context)
+        
+        if storage_analysis["should_store"]:
+            logger.debug(f"Autonomous memory: storing {len(storage_analysis['entries'])} items from assistant response")
+            
+            for entry in storage_analysis["entries"]:
+                await memory_trigger.memory_manager.set(
+                    section=entry["section"],
+                    key=entry["key"],
+                    value=entry["value"],
+                    session_id=entry.get("session_id"),
+                    ttl_seconds=entry.get("ttl_seconds")
+                )
+        
+    except Exception as e:
+        logger.warning(f"Error in autonomous memory processing for assistant response: {e}")
 
     # Notify subscribers
     await _notify(session_id, bot)
