@@ -1,32 +1,6 @@
 {
-  "gpt-4o-mini": {
-    "prompt_tokens": 3600,
-    "completion_tokens": 1700,
-    "cost_usd": 0.0015599999999999998,
-    "requests": 8,
-    "last_used": "2025-07-20T20:56:31.705770",
-    "daily_usage": {
-      "2025-07-20": {
-        "prompt_tokens": 3600,
-        "completion_tokens": 1700,
-        "cost_usd": 0.0015599999999999998,
-        "requests": 8
-      }
-    }
-  },
-  "gpt-3.5-turbo": {
-    "prompt_tokens": 1300,
-    "completion_tokens": 700,
-    "cost_usd": 0.0017000000000000001,
-    "requests": 6,
-    "last_used": "2025-07-20T20:56:31.706058",
-    "daily_usage": {
-      "2025-07-20": {
-        "prompt_tokens": 1300,
-        "completion_tokens": 700,
-        "cost_usd": 0.0017000000000000001,
-        "requests": 6
-      }
-    }
+  "_metadata": {
+    "reset_timestamp": "2025-07-20T21:33:13.906224",
+    "reset_count": 1
   }
 }

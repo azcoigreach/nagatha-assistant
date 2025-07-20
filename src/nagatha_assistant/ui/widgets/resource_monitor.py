@@ -15,12 +15,12 @@ import os
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Any, Optional
 from textual.app import ComposeResult
-from textual.widgets import Static, ProgressBar, Collapsible, DataTable
+from textual.widgets import Static, ProgressBar, Collapsible, DataTable, Button
 from textual.containers import Vertical, Horizontal, Grid
 from textual.reactive import reactive
 
 from nagatha_assistant.core.event_bus import get_event_bus
-from nagatha_assistant.utils.usage_tracker import load_usage
+from nagatha_assistant.utils.usage_tracker import load_usage, reset_usage, get_reset_info
 from nagatha_assistant.utils.logger import setup_logger_with_env_control
 
 logger = setup_logger_with_env_control()
@@ -206,6 +206,10 @@ class TokenUsageMetrics:
         self.today_cost = 0.0
         self.requests_count = 0
         self.average_tokens_per_request = 0
+        self.reset_timestamp = None
+        self.reset_count = 0
+        self.active_llms = []  # List of LLMs that have been used
+        self.llm_breakdown = {}  # Cost/token breakdown per LLM
         
     @classmethod
     async def collect(cls) -> 'TokenUsageMetrics':
@@ -214,6 +218,11 @@ class TokenUsageMetrics:
         
         try:
             usage_data = load_usage()
+            reset_info = get_reset_info()
+            
+            # Set reset information
+            metrics.reset_timestamp = reset_info.get('reset_timestamp')
+            metrics.reset_count = reset_info.get('reset_count', 0)
             
             # Calculate totals from the usage data
             total_input = 0
@@ -221,16 +230,38 @@ class TokenUsageMetrics:
             total_cost = 0.0
             request_count = 0
             today_cost = 0.0
+            active_llms = []
+            llm_breakdown = {}
             
             from datetime import datetime
             today = datetime.now().strftime('%Y-%m-%d')
             
             for model, data in usage_data.items():
+                # Skip metadata
+                if model == "_metadata":
+                    continue
+                    
+                # Track which LLMs are being used
+                active_llms.append(model)
+                
                 # Use the correct field names from usage tracker
-                total_input += data.get('prompt_tokens', 0)  # prompt_tokens = input_tokens
-                total_output += data.get('completion_tokens', 0)  # completion_tokens = output_tokens
-                total_cost += data.get('cost_usd', 0.0)
-                request_count += data.get('requests', 0)
+                prompt_tokens = data.get('prompt_tokens', 0)
+                completion_tokens = data.get('completion_tokens', 0) 
+                model_cost = data.get('cost_usd', 0.0)
+                model_requests = data.get('requests', 0)
+                
+                total_input += prompt_tokens
+                total_output += completion_tokens
+                total_cost += model_cost
+                request_count += model_requests
+                
+                # Store breakdown per LLM
+                llm_breakdown[model] = {
+                    'total_tokens': prompt_tokens + completion_tokens,
+                    'cost': model_cost,
+                    'requests': model_requests,
+                    'last_used': data.get('last_used')
+                }
                 
                 # Get today's cost from daily usage
                 daily_usage = data.get('daily_usage', {})
@@ -242,6 +273,8 @@ class TokenUsageMetrics:
             metrics.total_cost = total_cost
             metrics.requests_count = request_count
             metrics.today_cost = today_cost
+            metrics.active_llms = active_llms
+            metrics.llm_breakdown = llm_breakdown
             
             if metrics.requests_count > 0:
                 total_tokens = metrics.total_input_tokens + metrics.total_output_tokens
@@ -324,7 +357,17 @@ class ResourceMonitor(Vertical):
         # Token Usage Section
         with Collapsible(title="Token Usage & Costs", collapsed=True, id="token_metrics"):
             with Vertical(id="token_details"):
+                # Action bar with reset button
+                with Horizontal(classes="action-bar"):
+                    yield Button("Reset Totals", id="reset_usage_btn", classes="small-btn")
+                    yield Static("", id="reset_info", classes="resource-details")
+                
                 yield Static("Loading token usage...", id="token_summary")
+                
+                # LLM breakdown section
+                yield Static("Active LLMs:", id="llm_header", classes="suggestions-header")
+                yield Static("", id="llm_list", classes="resource-details")
+                
                 token_table = DataTable(id="token_table")
                 token_table.add_columns("Period", "Tokens", "Cost")
                 yield token_table
@@ -355,6 +398,33 @@ class ResourceMonitor(Vertical):
             logger.error(f"Error initializing resource monitor: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
+    
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press events."""
+        if event.button.id == "reset_usage_btn":
+            await self._handle_reset_usage()
+    
+    async def _handle_reset_usage(self) -> None:
+        """Handle the reset usage button click."""
+        try:
+            logger.info("ResourceMonitor: Resetting usage data...")
+            
+            # Reset the usage data
+            reset_usage()
+            
+            # Update displays immediately
+            await self._update_all_metrics()
+            
+            logger.info("ResourceMonitor: Usage data reset successfully")
+            
+        except Exception as e:
+            logger.error(f"Error resetting usage data: {e}")
+            # Show error in the reset info field
+            try:
+                reset_info = self.query_one("#reset_info", Static)
+                reset_info.update(f"Reset failed: {e}")
+            except:
+                pass
     
     async def _update_all_metrics(self) -> None:
         """Update all metrics displays."""
@@ -613,6 +683,9 @@ class ResourceMonitor(Vertical):
         try:
             token_summary = self.query_one("#token_summary", Static)
             token_table = self.query_one("#token_table", DataTable)
+            reset_info = self.query_one("#reset_info", Static)
+            llm_header = self.query_one("#llm_header", Static)
+            llm_list = self.query_one("#llm_list", Static)
             
             # Update summary
             summary_text = (
@@ -622,6 +695,37 @@ class ResourceMonitor(Vertical):
                 f"📊 Avg Tokens/Request: {metrics.average_tokens_per_request:.0f}"
             )
             token_summary.update(summary_text)
+            
+            # Update reset information
+            if metrics.reset_timestamp:
+                from datetime import datetime
+                try:
+                    reset_dt = datetime.fromisoformat(metrics.reset_timestamp)
+                    reset_info.update(f"📅 Reset: {reset_dt.strftime('%Y-%m-%d %H:%M')} (#{metrics.reset_count})")
+                except:
+                    reset_info.update(f"📅 Reset: {metrics.reset_timestamp} (#{metrics.reset_count})")
+            else:
+                reset_info.update("📅 Never reset")
+            
+            # Update LLM list
+            if metrics.active_llms:
+                llm_count = len(metrics.active_llms)
+                llm_header.update(f"Active LLMs ({llm_count}):")
+                
+                # Create breakdown of LLMs with their costs
+                llm_details = []
+                for llm in metrics.active_llms:
+                    breakdown = metrics.llm_breakdown.get(llm, {})
+                    cost = breakdown.get('cost', 0.0)
+                    requests = breakdown.get('requests', 0)
+                    llm_details.append(f"{llm}: ${cost:.4f} ({requests} req)")
+                
+                llm_list.update(" | ".join(llm_details[:3]))  # Show first 3 LLMs
+                if len(llm_details) > 3:
+                    llm_list.update(llm_list.renderable + f" + {len(llm_details) - 3} more")
+            else:
+                llm_header.update("Active LLMs:")
+                llm_list.update("No LLMs used yet")
             
             # Update table with more detailed breakdown
             token_table.clear()
