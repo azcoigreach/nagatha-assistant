@@ -233,7 +233,6 @@ class TokenUsageMetrics:
             active_llms = []
             llm_breakdown = {}
             
-            from datetime import datetime
             today = datetime.now().strftime('%Y-%m-%d')
             
             for model, data in usage_data.items():
