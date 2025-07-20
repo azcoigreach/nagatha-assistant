@@ -110,24 +110,19 @@ class DaemonManager:
             return False
         
         logger.info(f"Starting daemon {self.name}")
-        print(f"Starting daemon {self.name}")
         
         # Fork the process
         try:
             logger.info("About to fork daemon process")
-            print("About to fork daemon process")
             pid = os.fork()
-            print(f"Fork returned PID: {pid}")
             logger.info(f"Fork returned PID: {pid}")
             
             if pid > 0:
                 # Parent process - just return success
-                print(f"Parent process, forked child PID {pid}, returning.")
                 logger.info(f"Parent process, forked child PID {pid}, returning.")
                 return True
             
             # Child process - become daemon
-            print("Child process, becoming daemon")
             logger.info("Child process, becoming daemon")
             self._daemonize_and_write_pid()
             
@@ -192,10 +187,8 @@ class DaemonManager:
         try:
             with open(self.pid_file, 'w') as f:
                 f.write(str(daemon_pid))
-            print(f"[daemon] PID file written with PID {daemon_pid}")
             logger.info(f"[daemon] PID file written with PID {daemon_pid}")
         except Exception as e:
-            print(f"[daemon] Error writing PID file: {e}")
             logger.error(f"[daemon] Error writing PID file: {e}")
         # Don't redirect output for debugging - keep it visible
         logger.info("Daemon process started successfully")
@@ -291,7 +284,6 @@ class DaemonManager:
     def _setup_signal_handlers(self):
         """Set up signal handlers for graceful shutdown."""
         def signal_handler(signum, frame):
-            print(f"Daemon {self.name} received signal {signum}, shutting down gracefully")
             logger.info(f"Daemon {self.name} received signal {signum}, shutting down gracefully")
             self._cleanup_pid_file()
             sys.exit(0)
@@ -299,19 +291,12 @@ class DaemonManager:
         # Register signal handlers
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
-        print(f"Signal handlers set up for daemon {self.name}")
-        
-        # Check if there are any pending signals
-        print(f"Current signal handlers: SIGTERM={signal.getsignal(signal.SIGTERM)}, SIGINT={signal.getsignal(signal.SIGINT)}")
     
     def _cleanup_pid_file(self):
         """Clean up the PID file."""
         try:
             if self.pid_file.exists():
-                print(f"Cleaning up PID file for daemon {self.name}")
                 self.pid_file.unlink()
-                print(f"PID file cleaned up for daemon {self.name}")
                 logger.debug(f"Cleaned up PID file for daemon {self.name}")
         except OSError as e:
-            print(f"Failed to clean up PID file for daemon {self.name}: {e}")
             logger.warning(f"Failed to clean up PID file for daemon {self.name}: {e}")

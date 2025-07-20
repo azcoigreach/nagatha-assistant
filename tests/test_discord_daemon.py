@@ -11,6 +11,8 @@ import tempfile
 import time
 from pathlib import Path
 from unittest.mock import patch, MagicMock
+import signal
+import psutil
 
 from nagatha_assistant.utils.daemon import DaemonManager
 
@@ -57,12 +59,9 @@ class TestDaemonManager:
         result = self.daemon.start_daemon(dummy_target)
         
         assert result is True
-        assert self.daemon.pid_file.exists()
-        
-        # Read PID file
-        with open(self.daemon.pid_file, 'r') as f:
-            pid = int(f.read().strip())
-        assert pid == 1234
+        # Note: The PID file is now written by the daemonized process, not the parent
+        # The parent process returns True immediately after forking
+        # The actual PID file will be written by the daemonized process with its own PID
     
     @patch('os.fork')
     def test_daemon_start_already_running(self, mock_fork):
@@ -71,13 +70,14 @@ class TestDaemonManager:
         with open(self.daemon.pid_file, 'w') as f:
             f.write("9999")
         
-        # Mock that the process exists
+        # Mock that the process exists and has nagatha in command line
         with patch('nagatha_assistant.utils.daemon.psutil.pid_exists', return_value=True), \
              patch('nagatha_assistant.utils.daemon.psutil.Process') as mock_process:
             
             mock_proc = MagicMock()
             mock_proc.is_running.return_value = True
             mock_proc.status.return_value = "running"
+            mock_proc.cmdline.return_value = ["python", "-m", "nagatha", "discord", "start"]
             mock_process.return_value = mock_proc
             
             async def dummy_target():
@@ -113,6 +113,7 @@ class TestDaemonManager:
         mock_proc = MagicMock()
         mock_proc.is_running.return_value = True
         mock_proc.status.return_value = "running"
+        mock_proc.cmdline.return_value = ["python", "-m", "nagatha", "discord", "start"]
         mock_proc.memory_info.return_value.rss = 1024 * 1024  # 1MB
         mock_proc.cpu_percent.return_value = 5.0
         mock_proc.create_time.return_value = 1234567890
@@ -132,6 +133,61 @@ class TestDaemonManager:
         """Test stopping daemon when not running."""
         result = self.daemon.stop_daemon()
         assert result is False
+    
+    @patch('nagatha_assistant.utils.daemon.os.kill')
+    @patch('nagatha_assistant.utils.daemon.psutil.Process')
+    @patch('nagatha_assistant.utils.daemon.psutil.pid_exists')
+    def test_stop_daemon_success(self, mock_pid_exists, mock_process, mock_kill):
+        """Test successful daemon stop."""
+        # Create fake PID file
+        with open(self.daemon.pid_file, 'w') as f:
+            f.write("1234")
+        
+        # Mock that the process exists and is a nagatha process
+        mock_pid_exists.return_value = True
+        mock_proc = MagicMock()
+        mock_proc.is_running.return_value = True
+        mock_proc.status.return_value = "running"
+        mock_proc.cmdline.return_value = ["python", "-m", "nagatha", "discord", "start"]
+        mock_process.return_value = mock_proc
+        
+        result = self.daemon.stop_daemon()
+        
+        assert result is True
+        mock_kill.assert_called_once_with(1234, signal.SIGTERM)
+        mock_proc.wait.assert_called_once_with(timeout=10)
+        
+        # Check that PID file was cleaned up
+        assert not self.daemon.pid_file.exists()
+    
+    @patch('nagatha_assistant.utils.daemon.os.kill')
+    @patch('nagatha_assistant.utils.daemon.psutil.Process')
+    @patch('nagatha_assistant.utils.daemon.psutil.pid_exists')
+    def test_stop_daemon_force_kill(self, mock_pid_exists, mock_process, mock_kill):
+        """Test daemon stop with force kill after timeout."""
+        # Create fake PID file
+        with open(self.daemon.pid_file, 'w') as f:
+            f.write("1234")
+        
+        # Mock that the process exists and is a nagatha process
+        mock_pid_exists.return_value = True
+        mock_proc = MagicMock()
+        mock_proc.is_running.return_value = True
+        mock_proc.status.return_value = "running"
+        mock_proc.cmdline.return_value = ["python", "-m", "nagatha", "discord", "start"]
+        mock_proc.wait.side_effect = psutil.TimeoutExpired("cmd", 10)
+        mock_process.return_value = mock_proc
+        
+        result = self.daemon.stop_daemon()
+        
+        assert result is True
+        # Should call SIGTERM first
+        mock_kill.assert_any_call(1234, signal.SIGTERM)
+        # Should call SIGKILL after timeout
+        mock_kill.assert_any_call(1234, signal.SIGKILL)
+        
+        # Check that PID file was cleaned up
+        assert not self.daemon.pid_file.exists()
 
 
 class TestDiscordDaemonCLI:

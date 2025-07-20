@@ -51,10 +51,10 @@ def setup_logger(
 
 def setup_logger_with_env_control():
     """
-    Setup logger with environment variable control for different logging levels.
+    Set up logging with environment variable control.
     
     Environment variables:
-    - NAGATHA_LOG_LEVEL_FILE: Log level for file output (default: DEBUG)
+    - NAGATHA_LOG_LEVEL_FILE: Log level for file logging (default: DEBUG)
     - NAGATHA_LOG_LEVEL_CHAT: Log level for chat session display (default: WARNING)
     """
     logger = logging.getLogger("nagatha_assistant")

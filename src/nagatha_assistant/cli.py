@@ -600,6 +600,7 @@ def discord_start():
     async def _run_discord_daemon():
         """Run the Discord bot in daemon mode."""
         import asyncio
+        import signal
         try:
             from nagatha_assistant.core.plugin_manager import get_plugin_manager
             from nagatha_assistant.utils.logger import setup_logger_with_env_control
@@ -608,40 +609,75 @@ def discord_start():
             logger = setup_logger_with_env_control()
             logger.info("Starting Discord bot daemon")
             
-            # Get the plugin manager
-            plugin_manager = get_plugin_manager()
-            
-            # Initialize if needed
-            if not plugin_manager._initialized:
-                await plugin_manager.initialize()
-            
-            # Get the Discord bot plugin
-            discord_plugin = plugin_manager.get_plugin("discord_bot")
-            if not discord_plugin:
-                logger.error("Discord bot plugin not found or not enabled")
-                return
-            
-            # Start the Discord bot
-            result = await discord_plugin.start_discord_bot()
-            logger.info(f"Discord bot start result: {result}")
-            
-            # Keep the bot running indefinitely
-            if "started successfully" in result.lower():
-                logger.info("Discord bot daemon running, waiting for termination signal")
-                try:
-                    # Keep the event loop running until the daemon is terminated
-                    while discord_plugin.is_running:
-                        await asyncio.sleep(1)
-                except (KeyboardInterrupt, SystemExit):
-                    logger.info("Discord bot daemon received termination signal")
-                    await discord_plugin.stop_discord_bot()
-                    logger.info("Discord bot daemon stopped")
-            else:
-                logger.error(f"Failed to start Discord bot: {result}")
+            # Get the plugin manager with timeout
+            try:
+                logger.info("Getting plugin manager...")
+                plugin_manager = get_plugin_manager()
+                
+                # Initialize if needed with timeout
+                if not plugin_manager._initialized:
+                    logger.info("Initializing plugin manager...")
+                    await asyncio.wait_for(plugin_manager.initialize(), timeout=30.0)
+                
+                # Get the Discord bot plugin
+                logger.info("Getting Discord bot plugin...")
+                discord_plugin = plugin_manager.get_plugin("discord_bot")
+                if not discord_plugin:
+                    logger.error("Discord bot plugin not found or not enabled")
+                    return False
+                
+                # Start the Discord bot with timeout
+                logger.info("Starting Discord bot...")
+                result = await asyncio.wait_for(
+                    discord_plugin.start_discord_bot(), 
+                    timeout=60.0
+                )
+                logger.info(f"Discord bot start result: {result}")
+                
+                # Keep the bot running indefinitely
+                if "started successfully" in result.lower():
+                    logger.info("Discord bot daemon running, waiting for termination signal")
+                    
+                    # Set up signal handlers for graceful shutdown
+                    shutdown_event = asyncio.Event()
+                    
+                    def signal_handler(signum, frame):
+                        logger.info(f"Discord daemon received signal {signum}, initiating shutdown")
+                        shutdown_event.set()
+                    
+                    # Register signal handlers
+                    signal.signal(signal.SIGTERM, signal_handler)
+                    signal.signal(signal.SIGINT, signal_handler)
+                    
+                    try:
+                        # Keep the event loop running until shutdown is requested
+                        while discord_plugin.is_running and not shutdown_event.is_set():
+                            try:
+                                # Wait for shutdown event with timeout
+                                await asyncio.wait_for(shutdown_event.wait(), timeout=1.0)
+                            except asyncio.TimeoutError:
+                                # Timeout means no shutdown signal, continue running
+                                continue
+                            
+                    except (KeyboardInterrupt, SystemExit):
+                        logger.info("Discord bot daemon received termination signal")
+                    finally:
+                        # Clean up Discord bot
+                        logger.info("Stopping Discord bot...")
+                        await discord_plugin.stop_discord_bot()
+                        logger.info("Discord bot daemon stopped")
+                else:
+                    logger.error(f"Failed to start Discord bot: {result}")
+                    return False
+                    
+            except asyncio.TimeoutError:
+                logger.error("Discord bot daemon initialization timed out")
+                return False
                 
         except Exception as e:
             logger.error(f"Discord bot daemon crashed: {e}")
             logger.exception("Full traceback:")
+            return False
     
     # Start the daemon
     if daemon.start_daemon(_run_discord_daemon):
