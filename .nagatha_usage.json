@@ -1,31 +1,31 @@
 {
   "gpt-4o-mini": {
-    "prompt_tokens": 1100,
-    "completion_tokens": 450,
-    "cost_usd": 0.00043499999999999995,
-    "requests": 5,
-    "last_used": "2025-07-20T20:52:55.795619",
+    "prompt_tokens": 3600,
+    "completion_tokens": 1700,
+    "cost_usd": 0.0015599999999999998,
+    "requests": 8,
+    "last_used": "2025-07-20T20:56:31.705770",
     "daily_usage": {
       "2025-07-20": {
-        "prompt_tokens": 1100,
-        "completion_tokens": 450,
-        "cost_usd": 0.00043499999999999995,
-        "requests": 5
+        "prompt_tokens": 3600,
+        "completion_tokens": 1700,
+        "cost_usd": 0.0015599999999999998,
+        "requests": 8
       }
     }
   },
   "gpt-3.5-turbo": {
-    "prompt_tokens": 600,
-    "completion_tokens": 350,
-    "cost_usd": 0.000825,
-    "requests": 3,
-    "last_used": "2025-07-20T20:52:55.795900",
+    "prompt_tokens": 1300,
+    "completion_tokens": 700,
+    "cost_usd": 0.0017000000000000001,
+    "requests": 6,
+    "last_used": "2025-07-20T20:56:31.706058",
     "daily_usage": {
       "2025-07-20": {
-        "prompt_tokens": 600,
-        "completion_tokens": 350,
-        "cost_usd": 0.000825,
-        "requests": 3
+        "prompt_tokens": 1300,
+        "completion_tokens": 700,
+        "cost_usd": 0.0017000000000000001,
+        "requests": 6
       }
     }
   }
