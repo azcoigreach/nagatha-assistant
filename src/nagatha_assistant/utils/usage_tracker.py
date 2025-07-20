@@ -154,7 +154,6 @@ def reset_usage() -> None:
     This clears all token counts and costs but maintains the reset history
     so users know when the current tracking period started.
     """
-    from datetime import datetime
 
     with _LOCK:
         # Store the current timestamp as the reset time
