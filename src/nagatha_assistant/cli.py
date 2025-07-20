@@ -616,6 +616,11 @@ def discord_stop():
             from nagatha_assistant.core.plugin_manager import get_plugin_manager
             
             plugin_manager = get_plugin_manager()
+            
+            # Initialize if needed
+            if not plugin_manager._initialized:
+                await plugin_manager.initialize()
+            
             discord_plugin = plugin_manager.get_plugin("discord_bot")
             
             if not discord_plugin:
