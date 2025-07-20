@@ -41,7 +41,7 @@ class TestDiscordSlashCommands:
         discord_plugin.bot = mock_bot
         
         # Register slash commands
-        discord_plugin._register_slash_commands()
+        discord_plugin._register_legacy_slash_commands()
         
         # Verify commands were added to the tree
         assert mock_bot.tree.add_command.call_count == 3  # chat, status, help
@@ -174,9 +174,9 @@ class TestDiscordSlashCommands:
         """Test slash command registration when bot is not available."""
         # Ensure bot is None
         discord_plugin.bot = None
-        
+    
         # This should not raise an exception
-        discord_plugin._register_slash_commands()
+        discord_plugin._register_legacy_slash_commands()
         
         # Since no bot is available, no commands should be registered
         # This test just ensures the method handles the None case gracefully

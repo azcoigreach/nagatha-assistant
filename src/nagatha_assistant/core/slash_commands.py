@@ -12,15 +12,16 @@ import discord
 from discord import app_commands
 
 from .slash_command_manager import BaseSlashCommand, SlashCommandDefinition, SlashCommandOption
-from .agent import chat_with_user, create_session
-from ..modules.notes import search_notes, take_note
-from ..modules.tasks import list_tasks, add_task
+from .agent import send_message, start_session
 
 logger = logging.getLogger(__name__)
 
 
 class ChatSlashCommand(BaseSlashCommand):
     """Slash command for chatting with Nagatha."""
+    
+    def __init__(self):
+        super().__init__("discord_bot")
     
     def get_command_definition(self) -> SlashCommandDefinition:
         return SlashCommandDefinition(
@@ -67,10 +68,10 @@ class ChatSlashCommand(BaseSlashCommand):
         try:
             # Create or get user session
             user_id = str(interaction.user.id)
-            session = await create_session(user_id=user_id)
+            session_id = await start_session()
             
             # Get AI response
-            response = await chat_with_user(session.id, message)
+            response = await send_message(session_id, message)
             
             # Split long responses (Discord limit is 2000 chars)
             if len(response) > 2000:
@@ -96,6 +97,9 @@ class ChatSlashCommand(BaseSlashCommand):
 
 class StatusSlashCommand(BaseSlashCommand):
     """Slash command for system status."""
+    
+    def __init__(self):
+        super().__init__("discord_bot")
     
     def get_command_definition(self) -> SlashCommandDefinition:
         return SlashCommandDefinition(
@@ -159,6 +163,9 @@ class StatusSlashCommand(BaseSlashCommand):
 
 class HelpSlashCommand(BaseSlashCommand):
     """Slash command for help information."""
+    
+    def __init__(self):
+        super().__init__("discord_bot")
     
     def get_command_definition(self) -> SlashCommandDefinition:
         return SlashCommandDefinition(

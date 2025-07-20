@@ -722,7 +722,7 @@ class PluginManager:
             author="Nagatha Assistant",
             enabled=True,
             config={
-                "auto_start": False,
+                "auto_start": True,
                 "command_prefix": "!",
             }
         )
@@ -733,7 +733,7 @@ class PluginManager:
             version="1.0.0",
             description="Example plugin demonstrating Discord slash command registration",
             author="Nagatha Assistant",
-            enabled=False,  # Disabled by default since it's just an example
+            enabled=True,  # Enabled for testing
             dependencies=["discord_bot"],
             config={}
         )

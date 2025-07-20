@@ -183,8 +183,8 @@ class SlashCommandManager:
     def _create_parameterized_command(self, command_def: SlashCommandDefinition, command: BaseSlashCommand) -> None:
         """Create a command with parameters."""
         
-        # For now, create a generic command handler that can handle common patterns
-        # This is a simplified approach - in production, we'd want more robust parameter handling
+        # For now, create a simple command that extracts parameters from interaction data
+        # This is a workaround for the discord.py parameter handling limitations
         
         @app_commands.command(name=command_def.name, description=command_def.description)
         async def parameterized_command(interaction: discord.Interaction):
@@ -199,8 +199,16 @@ class SlashCommandManager:
             except Exception as e:
                 await command.handle_error(interaction, e)
         
-        # For parameterized commands, we'll need to manually set up the parameters
-        # This is a limitation of this simplified approach
+        # Add parameter descriptions using app_commands.describe
+        if command_def.options:
+            # Create a describe decorator with all parameter descriptions
+            describe_params = {}
+            for option in command_def.options:
+                describe_params[option.name] = option.description
+            
+            # Apply the describe decorator
+            parameterized_command = app_commands.describe(**describe_params)(parameterized_command)
+        
         self.bot.tree.add_command(parameterized_command)
     
     def unregister_command(self, command_name: str) -> bool:

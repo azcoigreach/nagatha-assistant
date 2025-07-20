@@ -16,6 +16,8 @@ from discord import app_commands
 
 from nagatha_assistant.core.plugin import SimplePlugin, PluginConfig, PluginCommand
 from nagatha_assistant.core.event import Event, StandardEventTypes, create_system_event
+from nagatha_assistant.core.slash_command_manager import SlashCommandManager
+from nagatha_assistant.core.slash_commands import ChatSlashCommand, StatusSlashCommand, HelpSlashCommand
 from nagatha_assistant.utils.logger import setup_logger_with_env_control
 
 logger = setup_logger_with_env_control()
@@ -147,14 +149,19 @@ class DiscordBotPlugin(SimplePlugin):
     def __init__(self, config: PluginConfig):
         """Initialize the Discord bot plugin."""
         super().__init__(config)
-        self.bot: Optional[NagathaDiscordBot] = None
-        self._bot_task: Optional[asyncio.Task] = None
-        self.is_running = False
         
         # Discord configuration
         self.token = os.getenv('DISCORD_BOT_TOKEN')
         self.guild_id = os.getenv('DISCORD_GUILD_ID')
-        self.command_prefix = os.getenv('DISCORD_COMMAND_PREFIX', '!')
+        self.command_prefix = os.getenv('DISCORD_COMMAND_PREFIX', self.config.config.get('command_prefix', '!'))
+        
+        # Bot state
+        self.bot: Optional[NagathaDiscordBot] = None
+        self.is_running = False
+        self._bot_task: Optional[asyncio.Task] = None
+        
+        # Slash command management
+        self.slash_command_manager: Optional[SlashCommandManager] = None
         
     async def setup(self) -> None:
         """Setup the Discord bot plugin by registering commands and handlers."""
@@ -212,6 +219,12 @@ class DiscordBotPlugin(SimplePlugin):
         # Validate Discord configuration
         if not self.token:
             logger.warning("Discord bot token not configured - Discord functionality disabled")
+        else:
+            # Auto-start if configured
+            auto_start = self.config.config.get('auto_start', False)
+            if auto_start:
+                logger.info("Auto-starting Discord bot...")
+                await self.start_discord_bot()
         
         logger.info("Discord bot plugin setup complete")
     
@@ -250,8 +263,15 @@ class DiscordBotPlugin(SimplePlugin):
             )
             logger.debug("Discord bot instance created")
             
-            # Register slash commands
-            self._register_slash_commands()
+            # Initialize slash command manager
+            self.slash_command_manager = SlashCommandManager(self.bot)
+            logger.debug("Slash command manager initialized")
+            
+            # Register core slash commands
+            # await self._register_core_slash_commands()
+            
+            # Register legacy slash commands for backward compatibility
+            self._register_legacy_slash_commands()
             
             # Add legacy prefix commands for backward compatibility
             @self.bot.command(name='ping')
@@ -268,48 +288,26 @@ class DiscordBotPlugin(SimplePlugin):
             
             # Start the bot in a background task
             self._bot_task = asyncio.create_task(self._run_bot())
-            self.is_running = True
-            logger.info("Discord bot task created and marked as running")
             
-            # Add a callback to handle task completion
+            # Set up task completion callback
             def task_done_callback(task):
                 try:
-                    # Check if task completed with an exception
-                    if task.exception():
-                        logger.error(f"Discord bot task failed: {task.exception()}")
-                        self.is_running = False
-                    else:
-                        logger.info("Discord bot task completed normally")
-                        self.is_running = False
+                    task.result()
                 except asyncio.CancelledError:
                     logger.info("Discord bot task was cancelled")
-                    self.is_running = False
                 except Exception as e:
-                    logger.error(f"Error in Discord bot task callback: {e}")
+                    logger.error(f"Discord bot task failed: {e}")
+                finally:
                     self.is_running = False
             
             self._bot_task.add_done_callback(task_done_callback)
             
-            # Publish bot start event
-            event = create_system_event(
-                "discord.bot.starting",
-                {"command_prefix": self.command_prefix},
-                source="discord_bot_plugin"
-            )
-            await self.publish_event(event)
-            
-            logger.info("Discord bot starting...")
+            self.is_running = True
+            logger.info("Discord bot started successfully")
             return "Discord bot started successfully"
             
         except Exception as e:
-            logger.error(f"Failed to start Discord bot: {e}")
-            logger.exception("Full traceback for Discord bot startup failure:")
-            self.is_running = False
-            
-            # Check if it's a privileged intents error
-            if "privileged intents" in str(e).lower():
-                return "Discord bot failed to start: Privileged intents not enabled. Please go to https://discord.com/developers/applications/, select your bot, go to the 'Bot' section, and enable 'Message Content Intent' under 'Privileged Gateway Intents'."
-            
+            logger.exception(f"Failed to start Discord bot: {e}")
             return f"Failed to start Discord bot: {str(e)}"
     
     async def stop_discord_bot(self, **kwargs) -> str:
@@ -371,8 +369,34 @@ class DiscordBotPlugin(SimplePlugin):
         else:
             return "Discord bot: Starting..."
     
-    def _register_slash_commands(self) -> None:
-        """Register slash commands using discord.py app_commands."""
+    async def _register_core_slash_commands(self) -> None:
+        """Register core slash commands using the SlashCommandManager."""
+        if not self.slash_command_manager:
+            logger.error("Slash command manager not initialized")
+            return
+        
+        try:
+            # Register core slash commands
+            core_commands = [
+                ChatSlashCommand(),
+                StatusSlashCommand(),
+                HelpSlashCommand()
+            ]
+            
+            for command in core_commands:
+                success = self.slash_command_manager.register_command(command)
+                if success:
+                    logger.info(f"Registered core slash command: {command.get_command_definition().name}")
+                else:
+                    logger.warning(f"Failed to register core slash command: {command.get_command_definition().name}")
+            
+            logger.info("Core slash commands registration complete")
+            
+        except Exception as e:
+            logger.error(f"Error registering core slash commands: {e}")
+
+    def _register_legacy_slash_commands(self) -> None:
+        """Register legacy slash commands using discord.py app_commands for backward compatibility."""
         if not self.bot:
             return
         
@@ -401,25 +425,25 @@ class DiscordBotPlugin(SimplePlugin):
             self.bot.tree.add_command(status_command)
             self.bot.tree.add_command(help_command)
             
-            logger.info("Registered slash commands: chat, status, help")
+            logger.info("Registered legacy slash commands: chat, status, help")
             
         except Exception as e:
-            logger.error(f"Error registering slash commands: {e}")
-    
+            logger.error(f"Error registering legacy slash commands: {e}")
+
     async def _handle_chat_command(self, interaction: discord.Interaction, message: str, private: bool = False):
         """Handle the /chat slash command."""
         # Defer response since AI calls can take time
         await interaction.response.defer(ephemeral=private)
         
         try:
-            from ..core.agent import chat_with_user, create_session
+            from ..core.agent import send_message, start_session
             
             # Create or get user session
             user_id = str(interaction.user.id)
-            session = await create_session(user_id=user_id)
+            session_id = await start_session()
             
             # Get AI response
-            response = await chat_with_user(session.id, message)
+            response = await send_message(session_id, message)
             
             # Split long responses (Discord limit is 2000 chars)
             if len(response) > 2000:
