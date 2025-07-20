@@ -9,6 +9,7 @@ import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
+import pytest_asyncio
 
 from nagatha_assistant.plugins.discord_bot import (
     get_auto_chat_setting, 
@@ -24,17 +25,20 @@ from nagatha_assistant.db import SessionLocal
 class TestDiscordAutoChat:
     """Test cases for Discord auto-chat functionality."""
     
-    @pytest.fixture
-    async def db_session(self):
-        """Create a test database session."""
-        # For testing, we'll use an in-memory SQLite database
+    @pytest_asyncio.fixture(autouse=True)
+    async def setup_database(self):
+        """Set up test database with tables."""
+        # Create all tables for testing
         from nagatha_assistant.db import engine, Base
         
-        # Create tables
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         
-        return SessionLocal()
+        yield
+        
+        # Clean up after tests
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
     
     @pytest.mark.asyncio
     async def test_set_auto_chat_setting_new(self):

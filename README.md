@@ -525,10 +525,13 @@ Nagatha works with any MCP-compatible server:
 Nagatha includes a comprehensive Discord bot plugin that provides:
 
 - **Slash Commands**: Modern Discord slash commands (`/chat`, `/status`, `/help`)
+- **Auto-Chat Mode**: Automatic responses to all messages in designated channels
 - **Plugin Extensibility**: Other plugins can register custom commands
 - **MCP Integration**: Commands can utilize MCP server tools
 - **Event Integration**: Deep integration with Nagatha's event system
 - **Auto-Start Configuration**: Configurable automatic startup
+- **Secure Token Management**: Environment variable-based configuration
+- **Docker/Cloud Ready**: Designed for containerized deployments
 
 ### Quick Discord Setup
 
@@ -555,14 +558,46 @@ Nagatha includes a comprehensive Discord bot plugin that provides:
    nagatha discord stop
    ```
 
-3. **Test in Discord:**
+3. **Using Discord Commands:**
    ```
-   /chat Hello Nagatha!    # AI conversation
-   /status                 # System status
-   /help                   # Show help
+   # Slash commands (preferred)
+   /chat Hello Nagatha!           # One-time chat
+   /auto-chat on                  # Enable auto-responses
+   /auto-chat off                 # Disable auto-responses
+   /auto-chat status              # Check auto-chat status
+   /status                        # System status
+   /help                          # Show all commands
+   
+   # Legacy prefix commands
+   !ping                          # Bot responds with "Pong!"
+   !hello                         # Greeting message
    ```
 
-For complete setup instructions, see **[docs/DISCORD_SETUP.md](docs/DISCORD_SETUP.md)**.
+### Auto-Chat Mode
+
+The auto-chat feature enables Nagatha to automatically respond to every message in a Discord channel or DM, making conversations more natural:
+
+**Features:**
+- **Natural Conversations**: No need to use `/chat` prefix for every message
+- **Channel-Specific**: Enable/disable per channel independently  
+- **Rate Limited**: Prevents spam (20 messages/hour by default)
+- **Permission Controlled**: Requires "Manage Channels" permission in servers
+- **Usage Tracking**: Monitor response frequency and patterns
+
+**Usage:**
+```
+/auto-chat on      # Enable automatic responses in this channel
+/auto-chat off     # Disable automatic responses
+/auto-chat status  # Show current settings and usage statistics
+```
+
+**Safety Features:**
+- Ignores bot messages and system messages
+- Rate limiting prevents API abuse
+- Permission checks ensure proper access control
+- Long responses automatically split for Discord limits
+
+For complete setup instructions, bot permissions, Docker deployment, and troubleshooting, see **[docs/DISCORD_SETUP.md](docs/DISCORD_SETUP.md)**.
 
 ## 🧪 Development
 
