@@ -81,23 +81,108 @@ def record_usage(model: str, prompt_tokens: int, completion_tokens: int) -> None
     but cost defaults to ``0`` so that future migrations can recalculate when
     pricing becomes known.
     """
-
     with _LOCK:
         data = _load()
-        rec = data.setdefault(model, {"prompt_tokens": 0, "completion_tokens": 0, "cost_usd": 0.0})
+        
+        # Ensure metadata exists
+        if "_metadata" not in data:
+            data["_metadata"] = {
+                "reset_timestamp": None,
+                "reset_count": 0
+            }
+        
+        # Get or create model record
+        rec = data.setdefault(model, {
+            "prompt_tokens": 0, 
+            "completion_tokens": 0, 
+            "cost_usd": 0.0,
+            "requests": 0,
+            "last_used": None,
+            "daily_usage": {}
+        })
+
+        # Handle backward compatibility for existing records
+        if "requests" not in rec:
+            rec["requests"] = 0
+        if "last_used" not in rec:
+            rec["last_used"] = None
+        if "daily_usage" not in rec:
+            rec["daily_usage"] = {}
 
         rec["prompt_tokens"] += prompt_tokens
         rec["completion_tokens"] += completion_tokens
+        rec["requests"] += 1
+        rec["last_used"] = datetime.now().isoformat()
 
+        # Track daily usage
+        today = datetime.now().strftime('%Y-%m-%d')
+        daily_rec = rec["daily_usage"].setdefault(today, {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "cost_usd": 0.0,
+            "requests": 0
+        })
+        
+        daily_rec["prompt_tokens"] += prompt_tokens
+        daily_rec["completion_tokens"] += completion_tokens
+        daily_rec["requests"] += 1
+
+        # Calculate costs
         price = MODEL_PRICING.get(model)
         if price:
             p_cost, c_cost = price
-            rec["cost_usd"] += (prompt_tokens / 1000) * p_cost + (completion_tokens / 1000) * c_cost
+            request_cost = (prompt_tokens / 1000) * p_cost + (completion_tokens / 1000) * c_cost
+            rec["cost_usd"] += request_cost
+            daily_rec["cost_usd"] += request_cost
 
         _save(data)
 
 
 def load_usage() -> dict[str, dict[str, float]]:
-    """Return the cumulative usage structure."""
+    """Return the cumulative usage structure.
+    
+    Returns only model usage data, filtering out metadata.
+    """
+    data = _load()
+    # Filter out metadata when returning usage data
+    return {k: v for k, v in data.items() if k != "_metadata"}
 
-    return _load()
+
+def reset_usage() -> None:
+    """Reset all usage data while preserving reset timestamp.
+    
+    This clears all token counts and costs but maintains the reset history
+    so users know when the current tracking period started.
+    """
+
+    with _LOCK:
+        # Store the current timestamp as the reset time
+        reset_timestamp = datetime.now().isoformat()
+        
+        # Create new empty data structure with reset metadata
+        data = {
+            "_metadata": {
+                "reset_timestamp": reset_timestamp,
+                "reset_count": 1  # Track how many times data has been reset
+            }
+        }
+        
+        # Check if there's existing metadata to preserve reset count
+        existing_data = _load()
+        if "_metadata" in existing_data:
+            existing_metadata = existing_data["_metadata"]
+            if "reset_count" in existing_metadata:
+                data["_metadata"]["reset_count"] = existing_metadata["reset_count"] + 1
+        
+        _save(data)
+        _log.info(f"Usage data reset at {reset_timestamp}")
+
+
+def get_reset_info() -> dict[str, any]:
+    """Get information about the last reset.
+    
+    Returns:
+        dict containing reset_timestamp and reset_count, or empty dict if never reset
+    """
+    data = _load()
+    return data.get("_metadata", {})
