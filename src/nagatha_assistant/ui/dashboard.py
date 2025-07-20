@@ -101,9 +101,10 @@ class DashboardApp(App):
     }
     
     .resource-item {
-        height: 5;
+        height: 8;
         padding: 1;
         border: solid $accent;
+        margin: 1 0;
     }
     
     .resource-label {
@@ -114,6 +115,12 @@ class DashboardApp(App):
     .resource-value {
         text-align: center;
         margin-top: 1;
+    }
+    
+    .resource-details {
+        text-align: center;
+        margin-top: 1;
+        color: $text-muted;
     }
     
     .status-ready {

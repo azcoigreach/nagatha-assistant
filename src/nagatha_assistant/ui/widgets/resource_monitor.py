@@ -30,15 +30,40 @@ class ResourceMetrics:
     """Container for system resource metrics."""
     
     def __init__(self):
+        # CPU metrics
         self.cpu_percent = 0.0
+        self.cpu_count = 0
+        self.cpu_freq_mhz = 0.0
+        self.cpu_per_core = []
+        
+        # Memory metrics
         self.memory_percent = 0.0
         self.memory_used_mb = 0
         self.memory_total_mb = 0
+        self.memory_available_mb = 0
+        self.memory_free_mb = 0
+        self.swap_percent = 0.0
+        self.swap_used_mb = 0
+        self.swap_total_mb = 0
+        
+        # Disk metrics
         self.disk_percent = 0.0
         self.disk_used_gb = 0
         self.disk_total_gb = 0
+        self.disk_free_gb = 0
+        
+        # Network metrics
+        self.network_bytes_sent_mb = 0
+        self.network_bytes_recv_mb = 0
+        self.network_connections = 0
+        
+        # System metrics
         self.process_count = 0
         self.uptime_seconds = 0
+        self.boot_time = 0
+        
+        # Temperature (if available)
+        self.cpu_temp_celsius = None
         
     @classmethod
     async def collect(cls) -> 'ResourceMetrics':
@@ -46,27 +71,66 @@ class ResourceMetrics:
         metrics = cls()
         
         try:
-            # CPU usage
+            # CPU metrics
             metrics.cpu_percent = psutil.cpu_percent(interval=1)
+            metrics.cpu_count = psutil.cpu_count()
+            cpu_freq = psutil.cpu_freq()
+            if cpu_freq:
+                metrics.cpu_freq_mhz = cpu_freq.current
+            metrics.cpu_per_core = psutil.cpu_percent(interval=1, percpu=True)
             
-            # Memory usage
+            # Memory metrics
             memory = psutil.virtual_memory()
             metrics.memory_percent = memory.percent
             metrics.memory_used_mb = memory.used // (1024 * 1024)
             metrics.memory_total_mb = memory.total // (1024 * 1024)
+            metrics.memory_available_mb = memory.available // (1024 * 1024)
+            metrics.memory_free_mb = memory.free // (1024 * 1024)
             
-            # Disk usage
+            # Swap metrics
+            swap = psutil.swap_memory()
+            metrics.swap_percent = swap.percent
+            metrics.swap_used_mb = swap.used // (1024 * 1024)
+            metrics.swap_total_mb = swap.total // (1024 * 1024)
+            
+            # Disk metrics
             disk = psutil.disk_usage('/')
             metrics.disk_percent = (disk.used / disk.total) * 100
             metrics.disk_used_gb = disk.used // (1024 * 1024 * 1024)
             metrics.disk_total_gb = disk.total // (1024 * 1024 * 1024)
+            metrics.disk_free_gb = disk.free // (1024 * 1024 * 1024)
             
-            # Process count
+            # Network metrics
+            net_io = psutil.net_io_counters()
+            metrics.network_bytes_sent_mb = net_io.bytes_sent // (1024 * 1024)
+            metrics.network_bytes_recv_mb = net_io.bytes_recv // (1024 * 1024)
+            metrics.network_connections = len(psutil.net_connections())
+            
+            # System metrics
             metrics.process_count = len(psutil.pids())
+            metrics.boot_time = psutil.boot_time()
+            metrics.uptime_seconds = int(datetime.now().timestamp() - metrics.boot_time)
             
-            # System uptime
-            boot_time = psutil.boot_time()
-            metrics.uptime_seconds = int(datetime.now().timestamp() - boot_time)
+            # Temperature (try to get CPU temperature)
+            try:
+                # Try to read temperature from common locations
+                temp_paths = [
+                    '/sys/class/thermal/thermal_zone0/temp',
+                    '/sys/class/hwmon/hwmon0/temp1_input',
+                    '/proc/acpi/thermal_zone/THM0/temperature'
+                ]
+                for temp_path in temp_paths:
+                    if os.path.exists(temp_path):
+                        with open(temp_path, 'r') as f:
+                            temp_raw = f.read().strip()
+                            # Most files return temperature in millidegrees
+                            if temp_raw.isdigit():
+                                temp_celsius = int(temp_raw) / 1000.0
+                                metrics.cpu_temp_celsius = temp_celsius
+                                break
+            except Exception:
+                # Temperature reading is optional
+                pass
             
         except Exception as e:
             logger.warning(f"Error collecting system metrics: {e}")
@@ -186,40 +250,52 @@ class ResourceMonitor(Vertical):
     Widget that displays system and application resource usage.
     """
     
-    # Reactive attributes for real-time updates
-    cpu_usage: reactive[float] = reactive(0.0)
-    memory_usage: reactive[float] = reactive(0.0)
-    disk_usage: reactive[float] = reactive(0.0)
+    # Regular attributes for tracking values
+    cpu_usage: float = 0.0
+    memory_usage: float = 0.0
+    disk_usage: float = 0.0
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.refresh_interval = 5  # seconds
         self.metrics_history: List[ResourceMetrics] = []
         self.max_history = 60  # Keep 5 minutes of history
+        self._update_timer = None
         
     def compose(self) -> ComposeResult:
         """Compose the resource monitor interface."""
         
         # System Resources Section
         with Collapsible(title="System Resources", collapsed=False, id="system_resources"):
-            with Grid(id="resource_grid"):
-                # CPU Usage
-                with Vertical(classes="resource-item"):
-                    yield Static("💻 CPU Usage", classes="resource-label")
-                    yield ProgressBar(total=100, id="cpu_progress")
-                    yield Static("0%", id="cpu_value", classes="resource-value")
-                
-                # Memory Usage  
-                with Vertical(classes="resource-item"):
-                    yield Static("🧠 Memory Usage", classes="resource-label")
-                    yield ProgressBar(total=100, id="memory_progress")
-                    yield Static("0 MB / 0 MB", id="memory_value", classes="resource-value")
-                
-                # Disk Usage
-                with Vertical(classes="resource-item"):
-                    yield Static("💾 Disk Usage", classes="resource-label")
-                    yield ProgressBar(total=100, id="disk_progress")
-                    yield Static("0 GB / 0 GB", id="disk_value", classes="resource-value")
+            # CPU Usage
+            with Vertical(classes="resource-item"):
+                yield Static("💻 CPU Usage", classes="resource-label")
+                yield Static("0% @ 0MHz", id="cpu_value", classes="resource-value")
+                yield Static("", id="cpu_details", classes="resource-details")
+            
+            # Memory Usage  
+            with Vertical(classes="resource-item"):
+                yield Static("🧠 Memory Usage", classes="resource-label")
+                yield Static("0% (0MB / 0MB)", id="memory_value", classes="resource-value")
+                yield Static("", id="memory_details", classes="resource-details")
+            
+            # Disk Usage
+            with Vertical(classes="resource-item"):
+                yield Static("💾 Disk Usage", classes="resource-label")
+                yield Static("0% (0GB / 0GB)", id="disk_value", classes="resource-value")
+                yield Static("", id="disk_details", classes="resource-details")
+            
+            # Network Usage
+            with Vertical(classes="resource-item"):
+                yield Static("🌐 Network Usage", classes="resource-label")
+                yield Static("", id="network_value", classes="resource-value")
+                yield Static("", id="network_details", classes="resource-details")
+            
+            # System Info
+            with Vertical(classes="resource-item"):
+                yield Static("⚙️ System Info", classes="resource-label")
+                yield Static("", id="system_value", classes="resource-value")
+                yield Static("", id="system_details", classes="resource-details")
         
         # Application Metrics Section
         with Collapsible(title="Application Metrics", collapsed=False, id="app_metrics"):
@@ -248,18 +324,35 @@ class ResourceMonitor(Vertical):
     async def on_mount(self) -> None:
         """Initialize the resource monitor when mounted."""
         try:
+            logger.info("ResourceMonitor: Starting initialization...")
+            
+            # Debug: Check what widgets were created
+            logger.info("ResourceMonitor: Checking created widgets...")
+            cpu_value = self.query_one("#cpu_value", Static)
+            memory_value = self.query_one("#memory_value", Static)
+            disk_value = self.query_one("#disk_value", Static)
+            
+            logger.info(f"ResourceMonitor: Value widgets found - CPU Value: {cpu_value is not None}, Memory Value: {memory_value is not None}, Disk Value: {disk_value is not None}")
+            
             # Start periodic updates
-            self.set_interval(self.refresh_interval, self._update_all_metrics)
+            self._update_timer = self.set_interval(self.refresh_interval, self._update_all_metrics)
+            logger.info(f"ResourceMonitor: Set update interval to {self.refresh_interval}s")
             
             # Initial load
+            logger.info("ResourceMonitor: Performing initial metrics update...")
             await self._update_all_metrics()
+            logger.info("ResourceMonitor: Initialization completed successfully")
             
         except Exception as e:
             logger.error(f"Error initializing resource monitor: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
     
     async def _update_all_metrics(self) -> None:
         """Update all metrics displays."""
         try:
+            logger.debug("ResourceMonitor: Starting metrics collection...")
+            
             # Collect all metrics concurrently
             system_metrics, db_metrics, mcp_metrics, token_metrics = await asyncio.gather(
                 ResourceMetrics.collect(),
@@ -269,9 +362,14 @@ class ResourceMonitor(Vertical):
                 return_exceptions=True
             )
             
+            logger.debug(f"ResourceMonitor: Collected metrics - System: {type(system_metrics)}, DB: {type(db_metrics)}, MCP: {type(mcp_metrics)}, Token: {type(token_metrics)}")
+            
             # Update displays
             if isinstance(system_metrics, ResourceMetrics):
+                logger.debug(f"ResourceMonitor: Updating system resources - CPU: {system_metrics.cpu_percent}%, Memory: {system_metrics.memory_percent}%, Disk: {system_metrics.disk_percent}%")
                 await self._update_system_resources(system_metrics)
+            else:
+                logger.warning(f"ResourceMonitor: System metrics collection failed: {system_metrics}")
                 
             if isinstance(db_metrics, DatabaseMetrics):
                 await self._update_database_metrics(db_metrics)
@@ -287,10 +385,14 @@ class ResourceMonitor(Vertical):
             
         except Exception as e:
             logger.error(f"Error updating metrics: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
     
     async def _update_system_resources(self, metrics: ResourceMetrics) -> None:
         """Update system resource displays."""
         try:
+            logger.debug(f"ResourceMonitor: Updating system resources display - CPU: {metrics.cpu_percent}%, Memory: {metrics.memory_percent}%, Disk: {metrics.disk_percent}%")
+            
             # Add to history
             self.metrics_history.append(metrics)
             if len(self.metrics_history) > self.max_history:
@@ -301,28 +403,134 @@ class ResourceMonitor(Vertical):
             self.memory_usage = metrics.memory_percent
             self.disk_usage = metrics.disk_percent
             
-            # Update progress bars
-            cpu_progress = self.query_one("#cpu_progress", ProgressBar)
-            cpu_progress.update(progress=metrics.cpu_percent)
+            # Progress bars removed - focusing only on values
             
-            memory_progress = self.query_one("#memory_progress", ProgressBar)
-            memory_progress.update(progress=metrics.memory_percent)
+            # Update value labels with both percentage and actual values
+            try:
+                cpu_value = self.query_one("#cpu_value", Static)
+                if cpu_value:
+                    # Show percentage and frequency
+                    freq_info = f" @ {metrics.cpu_freq_mhz:.0f}MHz" if metrics.cpu_freq_mhz > 0 else ""
+                    cpu_value.update(f"{metrics.cpu_percent:.1f}%{freq_info}")
+                    logger.debug(f"ResourceMonitor: Updated CPU value label to {metrics.cpu_percent:.1f}%{freq_info}")
+                else:
+                    logger.warning("ResourceMonitor: CPU value label not found")
+            except Exception as e:
+                logger.error(f"ResourceMonitor: Error updating CPU value label: {e}")
             
-            disk_progress = self.query_one("#disk_progress", ProgressBar)
-            disk_progress.update(progress=metrics.disk_percent)
+            try:
+                memory_value = self.query_one("#memory_value", Static)
+                if memory_value:
+                    # Show percentage and actual values
+                    memory_value.update(f"{metrics.memory_percent:.1f}% ({metrics.memory_used_mb}MB / {metrics.memory_total_mb}MB)")
+                    logger.debug(f"ResourceMonitor: Updated memory value label to {metrics.memory_percent:.1f}% ({metrics.memory_used_mb}MB / {metrics.memory_total_mb}MB)")
+                else:
+                    logger.warning("ResourceMonitor: Memory value label not found")
+            except Exception as e:
+                logger.error(f"ResourceMonitor: Error updating memory value label: {e}")
             
-            # Update value labels
-            cpu_value = self.query_one("#cpu_value", Static)
-            cpu_value.update(f"{metrics.cpu_percent:.1f}%")
+            try:
+                disk_value = self.query_one("#disk_value", Static)
+                if disk_value:
+                    # Show percentage and actual values
+                    disk_value.update(f"{metrics.disk_percent:.1f}% ({metrics.disk_used_gb}GB / {metrics.disk_total_gb}GB)")
+                    logger.debug(f"ResourceMonitor: Updated disk value label to {metrics.disk_percent:.1f}% ({metrics.disk_used_gb}GB / {metrics.disk_total_gb}GB)")
+                else:
+                    logger.warning("ResourceMonitor: Disk value label not found")
+            except Exception as e:
+                logger.error(f"ResourceMonitor: Error updating disk value label: {e}")
             
-            memory_value = self.query_one("#memory_value", Static)
-            memory_value.update(f"{metrics.memory_used_mb} MB / {metrics.memory_total_mb} MB")
+            # Update detailed information
+            await self._update_detailed_resources(metrics)
             
-            disk_value = self.query_one("#disk_value", Static)
-            disk_value.update(f"{metrics.disk_used_gb} GB / {metrics.disk_total_gb} GB")
+            # Check for resource alerts
+            self.check_resource_alerts(metrics)
             
         except Exception as e:
             logger.error(f"Error updating system resources: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+    
+    async def _update_detailed_resources(self, metrics: ResourceMetrics) -> None:
+        """Update detailed resource information displays."""
+        try:
+            # CPU Details
+            try:
+                cpu_details = self.query_one("#cpu_details", Static)
+                if cpu_details:
+                    temp_info = f"Temp: {metrics.cpu_temp_celsius:.1f}°C" if metrics.cpu_temp_celsius else ""
+                    core_info = f"{metrics.cpu_count} cores"
+                    
+                    details = [core_info]
+                    if temp_info:
+                        details.append(temp_info)
+                    
+                    cpu_details.update(" | ".join(details))
+            except Exception as e:
+                logger.error(f"ResourceMonitor: Error updating CPU details: {e}")
+            
+            # Memory Details
+            try:
+                memory_details = self.query_one("#memory_details", Static)
+                if memory_details:
+                    available_gb = metrics.memory_available_mb / 1024
+                    free_gb = metrics.memory_free_mb / 1024
+                    swap_info = f"Swap: {metrics.swap_used_mb}MB/{metrics.swap_total_mb}MB" if metrics.swap_total_mb > 0 else ""
+                    
+                    details = [f"Available: {available_gb:.1f}GB", f"Free: {free_gb:.1f}GB"]
+                    if swap_info:
+                        details.append(swap_info)
+                    
+                    memory_details.update(" | ".join(details))
+            except Exception as e:
+                logger.error(f"ResourceMonitor: Error updating memory details: {e}")
+            
+            # Disk Details
+            try:
+                disk_details = self.query_one("#disk_details", Static)
+                if disk_details:
+                    free_gb = metrics.disk_free_gb
+                    disk_details.update(f"Free: {free_gb:.1f}GB")
+            except Exception as e:
+                logger.error(f"ResourceMonitor: Error updating disk details: {e}")
+            
+            # Network Details
+            try:
+                network_value = self.query_one("#network_value", Static)
+                network_details = self.query_one("#network_details", Static)
+                
+                if network_value and network_details:
+                    sent_gb = metrics.network_bytes_sent_mb / 1024
+                    recv_gb = metrics.network_bytes_recv_mb / 1024
+                    
+                    network_value.update(f"↑ {sent_gb:.1f}GB | ↓ {recv_gb:.1f}GB")
+                    network_details.update(f"Connections: {metrics.network_connections}")
+            except Exception as e:
+                logger.error(f"ResourceMonitor: Error updating network details: {e}")
+            
+            # System Details
+            try:
+                system_value = self.query_one("#system_value", Static)
+                system_details = self.query_one("#system_details", Static)
+                
+                if system_value and system_details:
+                    uptime_hours = metrics.uptime_seconds / 3600
+                    uptime_days = uptime_hours / 24
+                    
+                    if uptime_days >= 1:
+                        uptime_str = f"{uptime_days:.1f} days"
+                    else:
+                        uptime_str = f"{uptime_hours:.1f} hours"
+                    
+                    system_value.update(f"Uptime: {uptime_str}")
+                    system_details.update(f"Processes: {metrics.process_count} | Boot: {datetime.fromtimestamp(metrics.boot_time).strftime('%Y-%m-%d %H:%M')}")
+            except Exception as e:
+                logger.error(f"ResourceMonitor: Error updating system details: {e}")
+                
+        except Exception as e:
+            logger.error(f"Error updating detailed resources: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
     
     async def _update_application_summary(self) -> None:
         """Update application metrics summary."""
@@ -444,20 +652,35 @@ class ResourceMonitor(Vertical):
         else:
             return []
     
-    def watch_cpu_usage(self, usage: float) -> None:
-        """React to CPU usage changes."""
-        # Could trigger alerts for high usage
-        if usage > 80:
-            logger.warning(f"High CPU usage detected: {usage}%")
+    def set_refresh_interval(self, interval_seconds: int) -> None:
+        """Change the refresh interval for resource monitoring."""
+        if interval_seconds < 1:
+            interval_seconds = 1
+        elif interval_seconds > 60:
+            interval_seconds = 60
+            
+        self.refresh_interval = interval_seconds
+        
+        # Restart the timer with new interval
+        if self._update_timer:
+            self._update_timer.stop()
+        
+        self._update_timer = self.set_interval(self.refresh_interval, self._update_all_metrics)
+        logger.info(f"ResourceMonitor: Changed update interval to {self.refresh_interval}s")
     
-    def watch_memory_usage(self, usage: float) -> None:
-        """React to memory usage changes."""
-        # Could trigger alerts for high usage
-        if usage > 85:
-            logger.warning(f"High memory usage detected: {usage}%")
+    def get_current_metrics(self) -> Optional[ResourceMetrics]:
+        """Get the most recent resource metrics."""
+        if self.metrics_history:
+            return self.metrics_history[-1]
+        return None
     
-    def watch_disk_usage(self, usage: float) -> None:
-        """React to disk usage changes."""
-        # Could trigger alerts for high usage
-        if usage > 90:
-            logger.warning(f"High disk usage detected: {usage}%")
+    def check_resource_alerts(self, metrics: ResourceMetrics) -> None:
+        """Check for resource usage alerts."""
+        if metrics.cpu_percent > 80:
+            logger.warning(f"High CPU usage detected: {metrics.cpu_percent}%")
+        
+        if metrics.memory_percent > 85:
+            logger.warning(f"High memory usage detected: {metrics.memory_percent}%")
+        
+        if metrics.disk_percent > 90:
+            logger.warning(f"High disk usage detected: {metrics.disk_percent}%")
