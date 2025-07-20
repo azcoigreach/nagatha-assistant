@@ -56,7 +56,14 @@ class DaemonManager:
                 proc = psutil.Process(pid)
                 # Additional check to ensure it's not a zombie or different process
                 if proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE:
-                    return True
+                    # Verify it's actually our daemon process by checking command line
+                    try:
+                        cmdline = proc.cmdline()
+                        if any('nagatha' in arg.lower() for arg in cmdline):
+                            return True
+                    except (psutil.AccessDenied, psutil.NoSuchProcess):
+                        # If we can't check command line, assume it's our process
+                        return True
             
             # If we get here, PID file exists but process doesn't, clean up
             self.pid_file.unlink()
@@ -102,38 +109,96 @@ class DaemonManager:
             logger.warning(f"Daemon {self.name} is already running")
             return False
         
+        logger.info(f"Starting daemon {self.name}")
+        print(f"Starting daemon {self.name}")
+        
         # Fork the process
         try:
+            logger.info("About to fork daemon process")
+            print("About to fork daemon process")
             pid = os.fork()
+            print(f"Fork returned PID: {pid}")
+            logger.info(f"Fork returned PID: {pid}")
             
             if pid > 0:
-                # Parent process - write PID file and return
-                with open(self.pid_file, 'w') as f:
-                    f.write(str(pid))
-                logger.info(f"Started daemon {self.name} with PID {pid}")
+                # Parent process - just return success
+                print(f"Parent process, forked child PID {pid}, returning.")
+                logger.info(f"Parent process, forked child PID {pid}, returning.")
                 return True
             
             # Child process - become daemon
-            self._daemonize()
+            print("Child process, becoming daemon")
+            logger.info("Child process, becoming daemon")
+            self._daemonize_and_write_pid()
+            
+            # Set up signal handlers for graceful shutdown
+            self._setup_signal_handlers()
             
             # Run the target function in the daemon
             try:
-                asyncio.run(target_func(*args, **kwargs))
+                result = asyncio.run(target_func(*args, **kwargs))
+                # If target function returns None or False, exit the daemon
+                if result is False:
+                    logger.info(f"Daemon {self.name} target function returned False, exiting")
+                    self._cleanup_pid_file()
+                    sys.exit(1)
             except Exception as e:
                 logger.error(f"Daemon {self.name} crashed: {e}")
                 logger.exception("Full traceback:")
+                # Clean up PID file on crash
+                self._cleanup_pid_file()
+                sys.exit(1)
             finally:
-                # Clean up PID file when daemon exits
-                try:
-                    if self.pid_file.exists():
-                        self.pid_file.unlink()
-                except OSError:
-                    pass
-                sys.exit(0)
+                # Only clean up PID file when the daemon process actually exits
+                # Don't clean up here as the daemon might still be running
+                pass
+            
+            # Clean up PID file when daemon exits normally
+            self._cleanup_pid_file()
+            sys.exit(0)
                 
         except OSError as e:
             logger.error(f"Failed to fork daemon {self.name}: {e}")
             return False
+
+    def _daemonize_and_write_pid(self):
+        """
+        Daemonize the current process and write the PID file as the daemonized process.
+        """
+        try:
+            # First fork
+            pid = os.fork()
+            if pid > 0:
+                sys.exit(0)  # Exit parent
+        except OSError as e:
+            logger.error(f"First fork failed: {e}")
+            sys.exit(1)
+        
+        # Decouple from parent environment
+        os.setsid()
+        os.umask(0)
+        
+        try:
+            # Second fork
+            pid = os.fork()
+            if pid > 0:
+                sys.exit(0)  # Exit second parent
+        except OSError as e:
+            logger.error(f"Second fork failed: {e}")
+            sys.exit(1)
+        
+        # Now in the daemonized (grandchild) process
+        daemon_pid = os.getpid()
+        try:
+            with open(self.pid_file, 'w') as f:
+                f.write(str(daemon_pid))
+            print(f"[daemon] PID file written with PID {daemon_pid}")
+            logger.info(f"[daemon] PID file written with PID {daemon_pid}")
+        except Exception as e:
+            print(f"[daemon] Error writing PID file: {e}")
+            logger.error(f"[daemon] Error writing PID file: {e}")
+        # Don't redirect output for debugging - keep it visible
+        logger.info("Daemon process started successfully")
     
     def stop_daemon(self, timeout: int = 10) -> bool:
         """
@@ -176,11 +241,7 @@ class DaemonManager:
             pass
         
         # Clean up PID file
-        try:
-            if self.pid_file.exists():
-                self.pid_file.unlink()
-        except OSError:
-            pass
+        self._cleanup_pid_file()
         
         return True
     
@@ -227,50 +288,30 @@ class DaemonManager:
                 "status": "not_found"
             }
     
-    def _daemonize(self):
-        """
-        Daemonize the current process.
+    def _setup_signal_handlers(self):
+        """Set up signal handlers for graceful shutdown."""
+        def signal_handler(signum, frame):
+            print(f"Daemon {self.name} received signal {signum}, shutting down gracefully")
+            logger.info(f"Daemon {self.name} received signal {signum}, shutting down gracefully")
+            self._cleanup_pid_file()
+            sys.exit(0)
         
-        This implements the standard Unix daemon double-fork pattern.
-        """
+        # Register signal handlers
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+        print(f"Signal handlers set up for daemon {self.name}")
+        
+        # Check if there are any pending signals
+        print(f"Current signal handlers: SIGTERM={signal.getsignal(signal.SIGTERM)}, SIGINT={signal.getsignal(signal.SIGINT)}")
+    
+    def _cleanup_pid_file(self):
+        """Clean up the PID file."""
         try:
-            # First fork
-            pid = os.fork()
-            if pid > 0:
-                sys.exit(0)  # Exit parent
+            if self.pid_file.exists():
+                print(f"Cleaning up PID file for daemon {self.name}")
+                self.pid_file.unlink()
+                print(f"PID file cleaned up for daemon {self.name}")
+                logger.debug(f"Cleaned up PID file for daemon {self.name}")
         except OSError as e:
-            logger.error(f"First fork failed: {e}")
-            sys.exit(1)
-        
-        # Decouple from parent environment
-        os.setsid()
-        os.umask(0)
-        
-        try:
-            # Second fork
-            pid = os.fork()
-            if pid > 0:
-                sys.exit(0)  # Exit second parent
-        except OSError as e:
-            logger.error(f"Second fork failed: {e}")
-            sys.exit(1)
-        
-        # Redirect standard file descriptors
-        sys.stdout.flush()
-        sys.stderr.flush()
-        
-        # Close file descriptors
-        for fd in range(3, 256):
-            try:
-                os.close(fd)
-            except OSError:
-                pass
-        
-        # Redirect stdin, stdout, stderr to /dev/null
-        stdin = open('/dev/null', 'r')
-        stdout = open('/dev/null', 'w')
-        stderr = open('/dev/null', 'w')
-        
-        os.dup2(stdin.fileno(), sys.stdin.fileno())
-        os.dup2(stdout.fileno(), sys.stdout.fileno())
-        os.dup2(stderr.fileno(), sys.stderr.fileno())
+            print(f"Failed to clean up PID file for daemon {self.name}: {e}")
+            logger.warning(f"Failed to clean up PID file for daemon {self.name}: {e}")
