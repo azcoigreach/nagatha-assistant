@@ -11,3 +11,4 @@ mcp-server-time
 pytest
 pytest-cov
 discord.py
+psutil
