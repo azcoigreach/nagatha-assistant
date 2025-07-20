@@ -248,6 +248,25 @@ class DiscordBotPlugin(SimplePlugin):
             self.is_running = True
             logger.info("Discord bot task created and marked as running")
             
+            # Add a callback to handle task completion
+            def task_done_callback(task):
+                try:
+                    # Check if task completed with an exception
+                    if task.exception():
+                        logger.error(f"Discord bot task failed: {task.exception()}")
+                        self.is_running = False
+                    else:
+                        logger.info("Discord bot task completed normally")
+                        self.is_running = False
+                except asyncio.CancelledError:
+                    logger.info("Discord bot task was cancelled")
+                    self.is_running = False
+                except Exception as e:
+                    logger.error(f"Error in Discord bot task callback: {e}")
+                    self.is_running = False
+            
+            self._bot_task.add_done_callback(task_done_callback)
+            
             # Publish bot start event
             event = create_system_event(
                 "discord.bot.starting",
@@ -333,7 +352,19 @@ class DiscordBotPlugin(SimplePlugin):
         """Internal method to run the Discord bot."""
         try:
             logger.info(f"Attempting to connect to Discord with token: {self.token[:10]}...")
+            # Remove timeout to see if connection works without timing out
             await self.bot.start(self.token)
+        except asyncio.TimeoutError:
+            logger.error("Discord bot connection timed out")
+            self.is_running = False
+            
+            # Publish bot error event
+            event = create_system_event(
+                "discord.bot.crashed",
+                {"error": "Connection timed out"},
+                source="discord_bot_plugin"
+            )
+            await self.publish_event(event)
         except discord.PrivilegedIntentsRequired as e:
             logger.error(f"Discord bot privileged intents not enabled: {e}")
             logger.error("To fix this, go to https://discord.com/developers/applications/")
@@ -392,6 +423,10 @@ class DiscordBotPlugin(SimplePlugin):
                 source="discord_bot_plugin"
             )
             await self.publish_event(event)
+        except asyncio.CancelledError:
+            logger.info("Discord bot task was cancelled")
+            self.is_running = False
+            raise  # Re-raise CancelledError
         except Exception as e:
             logger.error(f"Discord bot crashed with unexpected error: {e}")
             logger.exception("Full traceback:")
@@ -404,6 +439,10 @@ class DiscordBotPlugin(SimplePlugin):
                 source="discord_bot_plugin"
             )
             await self.publish_event(event)
+        finally:
+            # Ensure is_running is set to False when the method exits
+            self.is_running = False
+            logger.info("Discord bot _run_bot method completed")
     
     async def handle_system_event(self, event: Event) -> None:
         """
