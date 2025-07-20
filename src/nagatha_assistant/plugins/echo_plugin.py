@@ -8,8 +8,8 @@ an echo command that returns the input text.
 import logging
 from typing import Any, Dict
 
-from ..core.plugin import SimplePlugin, PluginConfig, PluginCommand
-from ..core.event import Event, StandardEventTypes
+from nagatha_assistant.core.plugin import SimplePlugin, PluginConfig, PluginCommand
+from nagatha_assistant.core.event import Event, StandardEventTypes
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class EchoPlugin(SimplePlugin):
         )
         
         # Register with the plugin manager
-        from ..core.plugin_manager import get_plugin_manager
+        from nagatha_assistant.core.plugin_manager import get_plugin_manager
         plugin_manager = get_plugin_manager()
         plugin_manager.register_command(echo_command)
         
@@ -88,7 +88,7 @@ class EchoPlugin(SimplePlugin):
         result = f"{prefix}{text}" if prefix else text
         
         # Publish an event for the echo
-        from ..core.event import create_system_event
+        from nagatha_assistant.core.event import create_system_event
         event = create_system_event(
             "plugin.echo.executed",
             {

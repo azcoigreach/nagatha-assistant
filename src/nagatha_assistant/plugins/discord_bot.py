@@ -13,9 +13,9 @@ from typing import Any, Dict, Optional
 import discord
 from discord.ext import commands
 
-from ..core.plugin import SimplePlugin, PluginConfig, PluginCommand
-from ..core.event import Event, StandardEventTypes, create_system_event
-from ..utils.logger import setup_logger_with_env_control
+from nagatha_assistant.core.plugin import SimplePlugin, PluginConfig, PluginCommand
+from nagatha_assistant.core.event import Event, StandardEventTypes, create_system_event
+from nagatha_assistant.utils.logger import setup_logger_with_env_control
 
 logger = setup_logger_with_env_control()
 
@@ -176,7 +176,7 @@ class DiscordBotPlugin(SimplePlugin):
         )
         
         # Register with the plugin manager
-        from ..core.plugin_manager import get_plugin_manager
+        from nagatha_assistant.core.plugin_manager import get_plugin_manager
         plugin_manager = get_plugin_manager()
         plugin_manager.register_command(start_command)
         plugin_manager.register_command(stop_command)
