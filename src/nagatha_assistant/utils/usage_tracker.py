@@ -81,8 +81,6 @@ def record_usage(model: str, prompt_tokens: int, completion_tokens: int) -> None
     but cost defaults to ``0`` so that future migrations can recalculate when
     pricing becomes known.
     """
-    from datetime import datetime
-
     with _LOCK:
         data = _load()
         
