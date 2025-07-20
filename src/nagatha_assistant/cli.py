@@ -799,5 +799,85 @@ def run():
     
     asyncio.run(_run_with_lifecycle())
 
+
+# Command to launch the enhanced Dashboard UI
+@cli.command(name="dashboard")
+def dashboard():
+    """
+    Launch the enhanced Dashboard UI for Nagatha.
+    """
+    async def _run_dashboard_with_lifecycle():
+        from nagatha_assistant.core.agent import startup, shutdown
+        from nagatha_assistant.ui.dashboard import run_dashboard
+        from nagatha_assistant.utils.logger import setup_logger_with_env_control
+        
+        # Set up enhanced logging
+        logger = setup_logger_with_env_control()
+        
+        try:
+            # Show configuration info
+            click.echo("Initializing Nagatha Assistant Dashboard...")
+            
+            # Check for mcp.json
+            if os.path.exists("mcp.json"):
+                try:
+                    with open("mcp.json", 'r') as f:
+                        config = json.load(f)
+                    server_count = len(config.get("mcpServers", {}))
+                    click.echo(f"Found {server_count} MCP servers configured in mcp.json")
+                except Exception as e:
+                    click.echo(f"⚠️  Warning: Could not read mcp.json: {e}")
+            else:
+                click.echo("ℹ️  No mcp.json found - running without MCP servers")
+            
+            # Show timeout settings
+            conn_timeout = os.getenv("NAGATHA_MCP_CONNECTION_TIMEOUT", "5")
+            disc_timeout = os.getenv("NAGATHA_MCP_DISCOVERY_TIMEOUT", "3")
+            click.echo(f"Connection timeout: {conn_timeout}s, Discovery timeout: {disc_timeout}s")
+            
+            # Initialize MCP and database
+            click.echo("Connecting to MCP servers...")
+            init_summary = await startup()
+            
+            # Show initialization results
+            if init_summary['connected'] > 0:
+                click.echo(f"✅ Connected to {init_summary['connected']}/{init_summary['total_configured']} MCP servers")
+                click.echo(f"🔧 {init_summary['total_tools']} tools available")
+                if init_summary['connected_servers']:
+                    click.echo(f"Connected: {', '.join(init_summary['connected_servers'])}")
+                logger.info(f"Dashboard startup successful: {init_summary['connected']} servers, {init_summary['total_tools']} tools")
+            else:
+                click.echo(f"⚠️  No MCP servers connected")
+                if init_summary['total_configured'] > 0:
+                    click.echo(f"   ({init_summary['total_configured']} configured but failed)")
+                logger.warning("Dashboard startup completed but no MCP servers connected")
+            
+            if init_summary['failed_servers']:
+                click.echo("❌ Failed connections:")
+                for server_name, error in init_summary['failed_servers']:
+                    click.echo(f"   • {server_name}: {error}")
+            
+            click.echo("\nStarting Nagatha Dashboard...")
+            click.echo("Use Ctrl+Q to quit, F1 for help, Ctrl+1 to focus command input")
+            
+            # Run the dashboard
+            await run_dashboard()
+        except KeyboardInterrupt:
+            click.echo("\nShutting down Nagatha Dashboard...")
+        except Exception as e:
+            click.echo(f"Error during dashboard startup: {e}", err=True)
+            logger.exception("Error during dashboard startup")
+        finally:
+            # Clean up MCP connections
+            try:
+                await shutdown()
+                click.echo("Dashboard shutdown complete.")
+            except Exception as e:
+                click.echo(f"Error during dashboard shutdown: {e}", err=True)
+                logger.exception("Error during dashboard shutdown")
+    
+    asyncio.run(_run_dashboard_with_lifecycle())
+
+
 if __name__ == "__main__":
     cli()
