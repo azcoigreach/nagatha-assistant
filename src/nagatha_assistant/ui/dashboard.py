@@ -192,6 +192,15 @@ class DashboardApp(App):
         text-style: bold;
         margin: 1 0;
     }
+    
+    /* Section toggle styles */
+    .section-hidden {
+        display: none;
+    }
+    
+    .section-visible {
+        display: block;
+    }
     """
     
     BINDINGS = [
@@ -199,16 +208,21 @@ class DashboardApp(App):
         Binding("ctrl+r", "refresh_all", "Refresh All"),
         Binding("ctrl+s", "show_sessions", "Sessions"),
         Binding("ctrl+t", "show_tools", "Tools"),
-        Binding("ctrl+1", "focus_command", "Focus Command"),
-        Binding("ctrl+2", "focus_status", "Focus Status"),
-        Binding("ctrl+3", "focus_notifications", "Focus Notifications"),
-        Binding("ctrl+4", "focus_resources", "Focus Resources"),
+        Binding("ctrl+1", "toggle_command", "Toggle Command"),
+        Binding("ctrl+2", "toggle_status", "Toggle Status"),
+        Binding("ctrl+3", "toggle_notifications", "Toggle Notifications"),
+        Binding("ctrl+4", "toggle_resources", "Toggle Resources"),
         Binding("f1", "show_help", "Help"),
     ]
     
     # Reactive attributes
     current_session_id: reactive[Optional[int]] = reactive(None)
     startup_status: reactive[dict] = reactive({})
+    
+    # Section visibility states
+    status_visible: reactive[bool] = reactive(True)
+    notifications_visible: reactive[bool] = reactive(True)
+    resources_visible: reactive[bool] = reactive(True)
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -228,22 +242,28 @@ class DashboardApp(App):
         with Container(id="main_content"):
             # Left Panel - Status and Notifications
             with Vertical(id="left_panel"):
-                yield Static("📊 System Status", classes="panel-title")
-                self.status_panel = StatusPanel(id="status_panel")
-                yield self.status_panel
+                # Status Section
+                with Vertical(id="status_section"):
+                    yield Static("📊 System Status", classes="panel-title")
+                    self.status_panel = StatusPanel(id="status_panel")
+                    yield self.status_panel
                 
-                yield Static("📬 Notifications", classes="panel-title")
-                self.notification_panel = NotificationPanel(id="notification_panel")
-                yield self.notification_panel
+                # Notifications Section
+                with Vertical(id="notifications_section"):
+                    yield Static("📬 Notifications", classes="panel-title")
+                    self.notification_panel = NotificationPanel(id="notification_panel")
+                    yield self.notification_panel
             
             # Center Panel - Command Interface
             with Vertical(id="center_panel"):
-                yield Static("💬 Command Interface", classes="panel-title")
-                self.command_panel = CommandPanel(
-                    id="command_panel",
-                    on_command_submitted=self._handle_command_submission
-                )
-                yield self.command_panel
+                # Command Section
+                with Vertical(id="command_section"):
+                    yield Static("💬 Command Interface", classes="panel-title")
+                    self.command_panel = CommandPanel(
+                        id="command_panel",
+                        on_command_submitted=self._handle_command_submission
+                    )
+                    yield self.command_panel
                 
                 # Chat history/conversation area could go here
                 yield Static("Conversation history and responses will appear here...", 
@@ -252,9 +272,11 @@ class DashboardApp(App):
             
             # Right Panel - Resources and Tools
             with Vertical(id="right_panel"):
-                yield Static("⚡ Resources", classes="panel-title")
-                self.resource_monitor = ResourceMonitor(id="resource_monitor")
-                yield self.resource_monitor
+                # Resources Section
+                with Vertical(id="resources_section"):
+                    yield Static("⚡ Resources", classes="panel-title")
+                    self.resource_monitor = ResourceMonitor(id="resource_monitor")
+                    yield self.resource_monitor
         
         yield Footer()
     
@@ -294,7 +316,7 @@ class DashboardApp(App):
                 f"✅ Dashboard initialized successfully!\n"
                 f"📋 Session ID: {self.current_session_id}\n"
                 f"{status_msg}\n\n"
-                f"Ready for commands. Use Ctrl+1 to focus command input."
+                f"Ready for commands. Use Ctrl+1-4 to toggle sections."
             )
             
             # Add startup message to database
@@ -371,6 +393,9 @@ class DashboardApp(App):
         elif command_lower.startswith('/clear'):
             self._clear_conversation_area()
         
+        elif command_lower.startswith('/toggle'):
+            await self._handle_toggle_command(command)
+        
         else:
             self._update_conversation_area(f"🔧 System: Unknown command '{command}'. Type '/help' for available commands.")
     
@@ -384,12 +409,13 @@ Available Commands:
 • /tools - Show available MCP tools
 • /refresh - Refresh all dashboard data
 • /clear - Clear conversation area
+• /toggle <section> - Toggle section visibility (status, notifications, resources, command)
 
 Keyboard Shortcuts:
-• Ctrl+1 - Focus command input
-• Ctrl+2 - Focus status panel
-• Ctrl+3 - Focus notifications
-• Ctrl+4 - Focus resources
+• Ctrl+1 - Toggle command section
+• Ctrl+2 - Toggle status section
+• Ctrl+3 - Toggle notifications section
+• Ctrl+4 - Toggle resources section
 • Ctrl+R - Refresh all data
 • Ctrl+S - Show sessions
 • Ctrl+T - Show tools
@@ -420,6 +446,26 @@ Last Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         except Exception as e:
             self._update_conversation_area(f"🔧 System: Error getting status: {e}")
     
+    async def _handle_toggle_command(self, command: str) -> None:
+        """Handle toggle commands for sections."""
+        parts = command.lower().split()
+        if len(parts) < 2:
+            self._update_conversation_area("🔧 System: Usage: /toggle <section> (sections: status, notifications, resources, command)")
+            return
+        
+        section = parts[1]
+        
+        if section == "status":
+            self.action_toggle_status()
+        elif section == "notifications":
+            self.action_toggle_notifications()
+        elif section == "resources":
+            self.action_toggle_resources()
+        elif section == "command":
+            self.action_toggle_command()
+        else:
+            self._update_conversation_area(f"🔧 System: Unknown section '{section}'. Available: status, notifications, resources, command")
+    
     def _update_conversation_area(self, message: str) -> None:
         """Update the conversation area with a new message."""
         try:
@@ -449,29 +495,63 @@ Last Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             logger.error(f"Error clearing conversation area: {e}")
     
     # Action handlers
-    def action_focus_command(self) -> None:
-        """Focus on the command input."""
-        if self.command_panel:
-            try:
-                command_input = self.command_panel.query_one("#command_input")
-                command_input.focus()
-            except Exception as e:
-                logger.error(f"Error focusing command input: {e}")
+    def action_toggle_command(self) -> None:
+        """Toggle the command section visibility."""
+        try:
+            command_section = self.query_one("#command_section")
+            if command_section.has_class("section-hidden"):
+                command_section.remove_class("section-hidden")
+                self._update_conversation_area("🔧 System: Command section shown")
+            else:
+                command_section.add_class("section-hidden")
+                self._update_conversation_area("🔧 System: Command section hidden")
+        except Exception as e:
+            logger.error(f"Error toggling command section: {e}")
     
-    def action_focus_status(self) -> None:
-        """Focus on the status panel."""
-        if self.status_panel:
-            self.status_panel.focus()
+    def action_toggle_status(self) -> None:
+        """Toggle the status section visibility."""
+        try:
+            status_section = self.query_one("#status_section")
+            if status_section.has_class("section-hidden"):
+                status_section.remove_class("section-hidden")
+                self.status_visible = True
+                self._update_conversation_area("🔧 System: Status section shown")
+            else:
+                status_section.add_class("section-hidden")
+                self.status_visible = False
+                self._update_conversation_area("🔧 System: Status section hidden")
+        except Exception as e:
+            logger.error(f"Error toggling status section: {e}")
     
-    def action_focus_notifications(self) -> None:
-        """Focus on the notifications panel."""
-        if self.notification_panel:
-            self.notification_panel.focus()
+    def action_toggle_notifications(self) -> None:
+        """Toggle the notifications section visibility."""
+        try:
+            notifications_section = self.query_one("#notifications_section")
+            if notifications_section.has_class("section-hidden"):
+                notifications_section.remove_class("section-hidden")
+                self.notifications_visible = True
+                self._update_conversation_area("🔧 System: Notifications section shown")
+            else:
+                notifications_section.add_class("section-hidden")
+                self.notifications_visible = False
+                self._update_conversation_area("🔧 System: Notifications section hidden")
+        except Exception as e:
+            logger.error(f"Error toggling notifications section: {e}")
     
-    def action_focus_resources(self) -> None:
-        """Focus on the resource monitor."""
-        if self.resource_monitor:
-            self.resource_monitor.focus()
+    def action_toggle_resources(self) -> None:
+        """Toggle the resources section visibility."""
+        try:
+            resources_section = self.query_one("#resources_section")
+            if resources_section.has_class("section-hidden"):
+                resources_section.remove_class("section-hidden")
+                self.resources_visible = True
+                self._update_conversation_area("🔧 System: Resources section shown")
+            else:
+                resources_section.add_class("section-hidden")
+                self.resources_visible = False
+                self._update_conversation_area("🔧 System: Resources section hidden")
+        except Exception as e:
+            logger.error(f"Error toggling resources section: {e}")
     
     async def action_refresh_all(self) -> None:
         """Refresh all dashboard data."""
@@ -529,6 +609,39 @@ Last Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         """React to session ID changes."""
         if session_id is not None and self.status_panel:
             self.status_panel.session_id = session_id
+    
+    def watch_status_visible(self, visible: bool) -> None:
+        """React to status section visibility changes."""
+        try:
+            status_section = self.query_one("#status_section")
+            if visible:
+                status_section.remove_class("section-hidden")
+            else:
+                status_section.add_class("section-hidden")
+        except Exception as e:
+            logger.error(f"Error updating status section visibility: {e}")
+    
+    def watch_notifications_visible(self, visible: bool) -> None:
+        """React to notifications section visibility changes."""
+        try:
+            notifications_section = self.query_one("#notifications_section")
+            if visible:
+                notifications_section.remove_class("section-hidden")
+            else:
+                notifications_section.add_class("section-hidden")
+        except Exception as e:
+            logger.error(f"Error updating notifications section visibility: {e}")
+    
+    def watch_resources_visible(self, visible: bool) -> None:
+        """React to resources section visibility changes."""
+        try:
+            resources_section = self.query_one("#resources_section")
+            if visible:
+                resources_section.remove_class("section-hidden")
+            else:
+                resources_section.add_class("section-hidden")
+        except Exception as e:
+            logger.error(f"Error updating resources section visibility: {e}")
 
 
 async def run_dashboard():
