@@ -697,7 +697,6 @@ class ResourceMonitor(Vertical):
             
             # Update reset information
             if metrics.reset_timestamp:
-                from datetime import datetime
                 try:
                     reset_dt = datetime.fromisoformat(metrics.reset_timestamp)
                     reset_info.update(f"📅 Reset: {reset_dt.strftime('%Y-%m-%d %H:%M')} (#{metrics.reset_count})")
