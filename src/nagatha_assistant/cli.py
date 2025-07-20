@@ -600,6 +600,18 @@ def discord_start():
             result = await discord_plugin.start_discord_bot()
             click.echo(result)
             
+            # Keep the bot running
+            if "started successfully" in result.lower():
+                click.echo("🔄 Discord bot is now running. Press Ctrl+C to stop.")
+                try:
+                    # Keep the event loop running
+                    while discord_plugin.is_running:
+                        await asyncio.sleep(1)
+                except KeyboardInterrupt:
+                    click.echo("\n🛑 Stopping Discord bot...")
+                    await discord_plugin.stop_discord_bot()
+                    click.echo("✅ Discord bot stopped.")
+            
         except Exception as e:
             click.echo(f"❌ Error starting Discord bot: {e}", err=True)
     
@@ -616,6 +628,11 @@ def discord_stop():
             from nagatha_assistant.core.plugin_manager import get_plugin_manager
             
             plugin_manager = get_plugin_manager()
+            
+            # Initialize if needed
+            if not plugin_manager._initialized:
+                await plugin_manager.initialize()
+            
             discord_plugin = plugin_manager.get_plugin("discord_bot")
             
             if not discord_plugin:

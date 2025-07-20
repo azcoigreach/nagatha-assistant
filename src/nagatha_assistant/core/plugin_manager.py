@@ -54,6 +54,7 @@ class PluginManager:
         self._event_bus = get_event_bus()
         self._lock = threading.RLock()
         self._startup_order: List[str] = []
+        self._initialized: bool = False
         
         # Setup default discovery paths
         self._setup_discovery_paths()
@@ -625,6 +626,101 @@ class PluginManager:
             logger.exception(f"Error executing command {command_name}: {e}")
             raise PluginError(f"Command execution failed: {e}")
     
+    def get_plugin(self, name: str) -> Optional[BasePlugin]:
+        """
+        Get a plugin instance by name.
+        
+        Args:
+            name: Plugin name to retrieve
+            
+        Returns:
+            Plugin instance if found, None otherwise
+        """
+        with self._lock:
+            return self._plugins.get(name)
+    
+    async def initialize(self) -> None:
+        """
+        Initialize the plugin manager by discovering and loading enabled plugins.
+        
+        This method discovers all available plugins, loads enabled ones,
+        and marks the plugin manager as initialized.
+        """
+        if self._initialized:
+            logger.debug("Plugin manager already initialized")
+            return
+        
+        try:
+            # Register built-in plugins manually to avoid import issues
+            self._register_builtin_plugins()
+            
+            # Discover and load plugins
+            configs = self.discover_plugins()
+            
+            # Add built-in plugin configs if they weren't discovered
+            builtin_configs = self._get_builtin_plugin_configs()
+            for name, config in builtin_configs.items():
+                if name not in configs:
+                    configs[name] = config
+            
+            results = await self.load_and_start_all(configs)
+            
+            # Mark as initialized
+            self._initialized = True
+            
+            started_count = sum(results.values())
+            total_count = len([c for c in configs.values() if c.enabled])
+            logger.info(f"Plugin manager initialized with {started_count}/{total_count} enabled plugins started")
+            
+        except Exception as e:
+            logger.exception(f"Error initializing plugin manager: {e}")
+            # Don't set _initialized to True if there was an error
+            raise
+    
+    def _register_builtin_plugins(self) -> None:
+        """Register built-in plugin classes to avoid dynamic import issues."""
+        try:
+            # Import and register Discord bot plugin
+            from ..plugins.discord_bot import DiscordBotPlugin
+            self.register_plugin_class("discord_bot", DiscordBotPlugin)
+            logger.debug("Registered built-in Discord bot plugin")
+        except ImportError as e:
+            logger.debug(f"Could not import Discord bot plugin: {e}")
+        
+        try:
+            # Import and register other built-in plugins
+            from ..plugins.echo_plugin import EchoPlugin
+            self.register_plugin_class("echo", EchoPlugin)
+            logger.debug("Registered built-in Echo plugin")
+        except ImportError as e:
+            logger.debug(f"Could not import Echo plugin: {e}")
+        
+        try:
+            from ..plugins.memory import MemoryPlugin
+            self.register_plugin_class("memory", MemoryPlugin)
+            logger.debug("Registered built-in Memory plugin")
+        except ImportError as e:
+            logger.debug(f"Could not import Memory plugin: {e}")
+    
+    def _get_builtin_plugin_configs(self) -> Dict[str, PluginConfig]:
+        """Get configurations for built-in plugins."""
+        builtin_configs = {}
+        
+        # Discord bot plugin config
+        builtin_configs["discord_bot"] = PluginConfig(
+            name="discord_bot",
+            version="1.0.0", 
+            description="Discord bot integration for Nagatha Assistant",
+            author="Nagatha Assistant",
+            enabled=True,
+            config={
+                "auto_start": False,
+                "command_prefix": "!",
+            }
+        )
+        
+        return builtin_configs
+
     def get_plugin_status(self) -> Dict[str, Dict[str, Any]]:
         """
         Get status information for all plugins.
