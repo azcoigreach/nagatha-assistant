@@ -690,7 +690,7 @@ class PluginManager:
         try:
             # Import and register other built-in plugins
             from ..plugins.echo_plugin import EchoPlugin
-            self.register_plugin_class("echo_plugin", EchoPlugin)
+            self.register_plugin_class("echo", EchoPlugin)
             logger.debug("Registered built-in Echo plugin")
         except ImportError as e:
             logger.debug(f"Could not import Echo plugin: {e}")
