@@ -701,6 +701,14 @@ class PluginManager:
             logger.debug("Registered built-in Memory plugin")
         except ImportError as e:
             logger.debug(f"Could not import Memory plugin: {e}")
+        
+        try:
+            # Import and register example slash commands plugin
+            from ..plugins.example_slash_commands import ExampleSlashCommandPlugin
+            self.register_plugin_class("example_slash_commands", ExampleSlashCommandPlugin)
+            logger.debug("Registered built-in Example Slash Commands plugin")
+        except ImportError as e:
+            logger.debug(f"Could not import Example Slash Commands plugin: {e}")
     
     def _get_builtin_plugin_configs(self) -> Dict[str, PluginConfig]:
         """Get configurations for built-in plugins."""
@@ -714,9 +722,20 @@ class PluginManager:
             author="Nagatha Assistant",
             enabled=True,
             config={
-                "auto_start": False,
+                "auto_start": True,
                 "command_prefix": "!",
             }
+        )
+        
+        # Example slash commands plugin config  
+        builtin_configs["example_slash_commands"] = PluginConfig(
+            name="example_slash_commands",
+            version="1.0.0",
+            description="Example plugin demonstrating Discord slash command registration",
+            author="Nagatha Assistant",
+            enabled=True,  # Enabled for testing
+            dependencies=["discord_bot"],
+            config={}
         )
         
         return builtin_configs

@@ -8,13 +8,16 @@ providing AI assistant capabilities through Discord channels.
 import os
 import logging
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 import discord
 from discord.ext import commands
+from discord import app_commands
 
 from nagatha_assistant.core.plugin import SimplePlugin, PluginConfig, PluginCommand
 from nagatha_assistant.core.event import Event, StandardEventTypes, create_system_event
+from nagatha_assistant.core.slash_command_manager import SlashCommandManager
+from nagatha_assistant.core.slash_commands import ChatSlashCommand, StatusSlashCommand, HelpSlashCommand
 from nagatha_assistant.utils.logger import setup_logger_with_env_control
 
 logger = setup_logger_with_env_control()
@@ -37,6 +40,25 @@ class NagathaDiscordBot(commands.Bot):
         """Called when the bot has successfully connected to Discord."""
         logger.info(f'Discord bot logged in as {self.user} (ID: {self.user.id})')
         logger.info(f'Connected to {len(self.guilds)} guild(s): {[guild.name for guild in self.guilds]}')
+        
+        # Sync slash commands
+        try:
+            # Sync globally or to specific guild
+            guild_id = self.discord_plugin.guild_id
+            if guild_id:
+                guild = self.get_guild(int(guild_id))
+                if guild:
+                    synced = await self.tree.sync(guild=guild)
+                    logger.info(f"Synced {len(synced)} slash commands to guild {guild.name}")
+                else:
+                    logger.warning(f"Guild with ID {guild_id} not found, syncing globally")
+                    synced = await self.tree.sync()
+                    logger.info(f"Synced {len(synced)} slash commands globally")
+            else:
+                synced = await self.tree.sync()
+                logger.info(f"Synced {len(synced)} slash commands globally")
+        except Exception as e:
+            logger.error(f"Failed to sync slash commands: {e}")
         
         # Publish bot ready event
         event = create_system_event(
@@ -127,14 +149,19 @@ class DiscordBotPlugin(SimplePlugin):
     def __init__(self, config: PluginConfig):
         """Initialize the Discord bot plugin."""
         super().__init__(config)
-        self.bot: Optional[NagathaDiscordBot] = None
-        self._bot_task: Optional[asyncio.Task] = None
-        self.is_running = False
         
         # Discord configuration
         self.token = os.getenv('DISCORD_BOT_TOKEN')
         self.guild_id = os.getenv('DISCORD_GUILD_ID')
-        self.command_prefix = os.getenv('DISCORD_COMMAND_PREFIX', '!')
+        self.command_prefix = os.getenv('DISCORD_COMMAND_PREFIX', self.config.config.get('command_prefix', '!'))
+        
+        # Bot state
+        self.bot: Optional[NagathaDiscordBot] = None
+        self.is_running = False
+        self._bot_task: Optional[asyncio.Task] = None
+        
+        # Slash command management
+        self.slash_command_manager: Optional[SlashCommandManager] = None
         
     async def setup(self) -> None:
         """Setup the Discord bot plugin by registering commands and handlers."""
@@ -192,6 +219,12 @@ class DiscordBotPlugin(SimplePlugin):
         # Validate Discord configuration
         if not self.token:
             logger.warning("Discord bot token not configured - Discord functionality disabled")
+        else:
+            # Auto-start if configured
+            auto_start = self.config.config.get('auto_start', False)
+            if auto_start:
+                logger.info("Auto-starting Discord bot...")
+                await self.start_discord_bot()
         
         logger.info("Discord bot plugin setup complete")
     
@@ -230,7 +263,17 @@ class DiscordBotPlugin(SimplePlugin):
             )
             logger.debug("Discord bot instance created")
             
-            # Add a simple ping command
+            # Initialize slash command manager
+            self.slash_command_manager = SlashCommandManager(self.bot)
+            logger.debug("Slash command manager initialized")
+            
+            # Register core slash commands
+            # await self._register_core_slash_commands()
+            
+            # Register legacy slash commands for backward compatibility
+            self._register_legacy_slash_commands()
+            
+            # Add legacy prefix commands for backward compatibility
             @self.bot.command(name='ping')
             async def ping(ctx):
                 """Respond with pong to test bot connectivity."""
@@ -245,48 +288,26 @@ class DiscordBotPlugin(SimplePlugin):
             
             # Start the bot in a background task
             self._bot_task = asyncio.create_task(self._run_bot())
-            self.is_running = True
-            logger.info("Discord bot task created and marked as running")
             
-            # Add a callback to handle task completion
+            # Set up task completion callback
             def task_done_callback(task):
                 try:
-                    # Check if task completed with an exception
-                    if task.exception():
-                        logger.error(f"Discord bot task failed: {task.exception()}")
-                        self.is_running = False
-                    else:
-                        logger.info("Discord bot task completed normally")
-                        self.is_running = False
+                    task.result()
                 except asyncio.CancelledError:
                     logger.info("Discord bot task was cancelled")
-                    self.is_running = False
                 except Exception as e:
-                    logger.error(f"Error in Discord bot task callback: {e}")
+                    logger.error(f"Discord bot task failed: {e}")
+                finally:
                     self.is_running = False
             
             self._bot_task.add_done_callback(task_done_callback)
             
-            # Publish bot start event
-            event = create_system_event(
-                "discord.bot.starting",
-                {"command_prefix": self.command_prefix},
-                source="discord_bot_plugin"
-            )
-            await self.publish_event(event)
-            
-            logger.info("Discord bot starting...")
+            self.is_running = True
+            logger.info("Discord bot started successfully")
             return "Discord bot started successfully"
             
         except Exception as e:
-            logger.error(f"Failed to start Discord bot: {e}")
-            logger.exception("Full traceback for Discord bot startup failure:")
-            self.is_running = False
-            
-            # Check if it's a privileged intents error
-            if "privileged intents" in str(e).lower():
-                return "Discord bot failed to start: Privileged intents not enabled. Please go to https://discord.com/developers/applications/, select your bot, go to the 'Bot' section, and enable 'Message Content Intent' under 'Privileged Gateway Intents'."
-            
+            logger.exception(f"Failed to start Discord bot: {e}")
             return f"Failed to start Discord bot: {str(e)}"
     
     async def stop_discord_bot(self, **kwargs) -> str:
@@ -347,6 +368,289 @@ class DiscordBotPlugin(SimplePlugin):
             return f"Discord bot: Running as {self.bot.user.name} in {guild_count} servers"
         else:
             return "Discord bot: Starting..."
+    
+    async def _register_core_slash_commands(self) -> None:
+        """Register core slash commands using the SlashCommandManager."""
+        if not self.slash_command_manager:
+            logger.error("Slash command manager not initialized")
+            return
+        
+        try:
+            # Register core slash commands
+            core_commands = [
+                ChatSlashCommand(),
+                StatusSlashCommand(),
+                HelpSlashCommand()
+            ]
+            
+            for command in core_commands:
+                success = self.slash_command_manager.register_command(command)
+                if success:
+                    logger.info(f"Registered core slash command: {command.get_command_definition().name}")
+                else:
+                    logger.warning(f"Failed to register core slash command: {command.get_command_definition().name}")
+            
+            logger.info("Core slash commands registration complete")
+            
+        except Exception as e:
+            logger.error(f"Error registering core slash commands: {e}")
+
+    def _register_legacy_slash_commands(self) -> None:
+        """Register legacy slash commands using discord.py app_commands for backward compatibility."""
+        if not self.bot:
+            return
+        
+        try:
+            # Chat command
+            @app_commands.command(name="chat", description="Chat with Nagatha AI assistant")
+            @app_commands.describe(
+                message="Your message to Nagatha",
+                private="Send response privately (only you can see it)"
+            )
+            async def chat_command(interaction: discord.Interaction, message: str, private: bool = False):
+                await self._handle_chat_command(interaction, message, private)
+            
+            # Status command  
+            @app_commands.command(name="status", description="Get Nagatha system status")
+            async def status_command(interaction: discord.Interaction):
+                await self._handle_status_command(interaction)
+            
+            # Help command
+            @app_commands.command(name="help", description="Get help with Nagatha commands")
+            async def help_command(interaction: discord.Interaction):
+                await self._handle_help_command(interaction)
+            
+            # Register commands with the bot tree
+            self.bot.tree.add_command(chat_command)
+            self.bot.tree.add_command(status_command)
+            self.bot.tree.add_command(help_command)
+            
+            logger.info("Registered legacy slash commands: chat, status, help")
+            
+        except Exception as e:
+            logger.error(f"Error registering legacy slash commands: {e}")
+
+    async def _handle_chat_command(self, interaction: discord.Interaction, message: str, private: bool = False):
+        """Handle the /chat slash command."""
+        # Defer response since AI calls can take time
+        await interaction.response.defer(ephemeral=private)
+        
+        try:
+            from ..core.agent import send_message, start_session
+            
+            # Create or get user session
+            user_id = str(interaction.user.id)
+            session_id = await start_session()
+            
+            # Get AI response
+            response = await send_message(session_id, message)
+            
+            # Split long responses (Discord limit is 2000 chars)
+            if len(response) > 2000:
+                # Send first part
+                await interaction.followup.send(response[:1997] + "...")
+                
+                # Send remaining parts
+                remaining = response[1997:]
+                while remaining:
+                    chunk = remaining[:2000]
+                    remaining = remaining[2000:]
+                    await interaction.followup.send(chunk)
+            else:
+                await interaction.followup.send(response)
+                
+        except Exception as e:
+            logger.exception(f"Error in chat command: {e}")
+            await interaction.followup.send(
+                f"❌ Sorry, I encountered an error: {str(e)}", 
+                ephemeral=True
+            )
+    
+    async def _handle_status_command(self, interaction: discord.Interaction):
+        """Handle the /status slash command."""
+        await interaction.response.defer()
+        
+        try:
+            from ..core.mcp_manager import get_mcp_manager
+            from ..core.plugin_manager import get_plugin_manager
+            
+            # Get MCP status
+            try:
+                mcp_manager = await get_mcp_manager()
+                mcp_status = await mcp_manager.get_status()
+                mcp_servers = len(mcp_status.get("servers", {}))
+                mcp_tools = sum(len(server.get("tools", [])) for server in mcp_status.get("servers", {}).values())
+            except Exception:
+                mcp_servers = 0
+                mcp_tools = 0
+            
+            # Get plugin status
+            try:
+                plugin_manager = get_plugin_manager()
+                plugin_status = plugin_manager.get_plugin_status()
+                active_plugins = sum(1 for p in plugin_status.values() if p["state"] == "started")
+                total_plugins = len(plugin_status)
+            except Exception:
+                active_plugins = 0
+                total_plugins = 0
+            
+            # Build status response
+            response = "🤖 **Nagatha Assistant Status**\n\n"
+            response += f"**Discord Bot:** ✅ Online\n"
+            response += f"**Active Plugins:** {active_plugins}/{total_plugins}\n"
+            response += f"**MCP Servers:** {mcp_servers}\n" 
+            response += f"**Available Tools:** {mcp_tools}\n\n"
+            
+            # Add plugin details
+            if plugin_status:
+                response += "**Plugin Status:**\n"
+                for name, status in plugin_status.items():
+                    state_emoji = "✅" if status["state"] == "started" else "❌"
+                    response += f"{state_emoji} {name} ({status['state']})\n"
+            
+            await interaction.followup.send(response)
+            
+        except Exception as e:
+            logger.exception(f"Error in status command: {e}")
+            await interaction.followup.send(
+                f"❌ Error getting status: {str(e)}", 
+                ephemeral=True
+            )
+    
+    async def _handle_help_command(self, interaction: discord.Interaction):
+        """Handle the /help slash command."""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Build help response
+            response = "🤖 **Nagatha Assistant Commands**\n\n"
+            response += "**Available Slash Commands:**\n"
+            response += "• `/chat <message> [private]` - Chat with Nagatha AI assistant\n"
+            response += "• `/status` - Get system status and plugin information\n" 
+            response += "• `/help` - Show this help message\n\n"
+            
+            response += "**Legacy Prefix Commands:**\n"
+            response += f"• `{self.command_prefix}ping` - Test bot connectivity\n"
+            response += f"• `{self.command_prefix}hello` - Get a greeting from Nagatha\n\n"
+            
+            response += "**Getting Started:**\n"
+            response += "1. Use `/chat` to have conversations with Nagatha\n"
+            response += "2. Check `/status` to see what tools and plugins are available\n"
+            response += "3. Nagatha can help with notes, tasks, web research, and more!\n\n"
+            
+            response += "*More commands may be available from other plugins and MCP servers.*"
+            
+            await interaction.followup.send(response)
+            
+        except Exception as e:
+            logger.exception(f"Error in help command: {e}")
+            await interaction.followup.send(
+                f"❌ Error getting help: {str(e)}"
+            )
+    
+    def add_slash_command(self, name: str, description: str, handler: callable, **kwargs) -> bool:
+        """
+        Add a custom slash command from a plugin or MCP server.
+        
+        Args:
+            name: Command name
+            description: Command description  
+            handler: Async function to handle the command
+            **kwargs: Additional app_commands.command parameters
+            
+        Returns:
+            True if registered successfully, False otherwise
+        """
+        if not self.bot:
+            logger.warning("Cannot add slash command: bot not initialized")
+            return False
+        
+        try:
+            # Create the app command
+            @app_commands.command(name=name, description=description, **kwargs)
+            async def custom_command(interaction: discord.Interaction):
+                try:
+                    await handler(interaction)
+                except Exception as e:
+                    logger.exception(f"Error in custom slash command {name}: {e}")
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message(
+                            f"❌ Command error: {str(e)}", ephemeral=True
+                        )
+                    else:
+                        await interaction.followup.send(
+                            f"❌ Command error: {str(e)}", ephemeral=True
+                        )
+            
+            # Add to bot tree
+            self.bot.tree.add_command(custom_command)
+            
+            logger.info(f"Added custom slash command: /{name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to add slash command {name}: {e}")
+            return False
+    
+    def remove_slash_command(self, name: str) -> bool:
+        """
+        Remove a custom slash command.
+        
+        Args:
+            name: Command name to remove
+            
+        Returns:
+            True if removed successfully, False otherwise
+        """
+        if not self.bot:
+            return False
+        
+        try:
+            self.bot.tree.remove_command(name)
+            logger.info(f"Removed slash command: /{name}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to remove slash command {name}: {e}")
+            return False
+    
+    async def sync_slash_commands(self, guild_id: Optional[int] = None) -> int:
+        """
+        Manually sync slash commands with Discord.
+        
+        Args:
+            guild_id: Guild ID to sync to (None for global sync)
+            
+        Returns:
+            Number of commands synced
+        """
+        if not self.bot:
+            return 0
+        
+        try:
+            if guild_id:
+                guild = self.bot.get_guild(guild_id)
+                if guild:
+                    synced = await self.bot.tree.sync(guild=guild)
+                    logger.info(f"Synced {len(synced)} slash commands to guild {guild.name}")
+                    return len(synced)
+                else:
+                    logger.warning(f"Guild {guild_id} not found")
+                    return 0
+            else:
+                synced = await self.bot.tree.sync()
+                logger.info(f"Synced {len(synced)} slash commands globally")
+                return len(synced)
+                
+        except Exception as e:
+            logger.error(f"Failed to sync slash commands: {e}")
+            return 0
+    
+    def get_slash_command_names(self) -> List[str]:
+        """Get list of registered slash command names."""
+        if not self.bot:
+            return []
+        
+        return [cmd.name for cmd in self.bot.tree.get_commands()]
     
     async def _run_bot(self):
         """Internal method to run the Discord bot."""
