@@ -709,11 +709,19 @@ async def send_message(
                     )
                     
                     assistant_msg = final_response.choices[0].message.content or assistant_msg
+                    
+                    # Record usage for the follow-up response
+                    if hasattr(final_response, 'usage') and final_response.usage:
+                        record_usage(
+                            model=model,
+                            prompt_tokens=final_response.usage.prompt_tokens,
+                            completion_tokens=final_response.usage.completion_tokens
+                        )
             else:
                 # No tool calls, just use the direct response
                 assistant_msg = response.choices[0].message.content or ""
             
-            # Record usage
+            # Record usage for the initial response
             if hasattr(response, 'usage') and response.usage:
                 record_usage(
                     model=model,

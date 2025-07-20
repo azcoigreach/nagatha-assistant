@@ -29,7 +29,10 @@ class TestDiscordBotPlugin:
     @pytest.fixture
     def discord_plugin(self, plugin_config):
         """Create a Discord bot plugin instance for testing."""
-        with patch.dict(os.environ, {'DISCORD_BOT_TOKEN': 'test_token'}):
+        with patch.dict(os.environ, {
+            'DISCORD_BOT_TOKEN': 'test_token',
+            'DISCORD_COMMAND_PREFIX': '!'
+        }):
             return DiscordBotPlugin(plugin_config)
     
     def test_plugin_initialization(self, discord_plugin):

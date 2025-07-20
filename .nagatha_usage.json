@@ -1,7 +1,6 @@
 {
-  "gpt-4o-mini": {
-    "prompt_tokens": 0,
-    "completion_tokens": 0,
-    "cost_usd": 0.0
+  "_metadata": {
+    "reset_timestamp": "2025-07-20T21:33:13.906224",
+    "reset_count": 1
   }
 }

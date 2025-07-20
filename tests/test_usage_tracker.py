@@ -9,7 +9,7 @@ import os
 import json
 from pathlib import Path
 from unittest.mock import patch, mock_open
-from nagatha_assistant.utils.usage_tracker import record_usage, load_usage
+from nagatha_assistant.utils.usage_tracker import record_usage, load_usage, reset_usage, get_reset_info
 
 
 class TestUsageTracker:
@@ -57,12 +57,19 @@ class TestUsageTracker:
                 record_usage("gpt-3.5-turbo", 200, 100)
                 record_usage("claude-3", 150, 75)
                 
+                # Check the filtered usage data (what load_usage returns)
+                usage_data = load_usage()
+                assert len(usage_data) == 3
+                assert "gpt-4" in usage_data
+                assert "gpt-3.5-turbo" in usage_data
+                assert "claude-3" in usage_data
+                
+                # Check that metadata is present in raw file but not in load_usage result
                 with open(usage_file, 'r') as f:
-                    data = json.load(f)
-                    assert len(data) == 3
-                    assert "gpt-4" in data
-                    assert "gpt-3.5-turbo" in data
-                    assert "claude-3" in data
+                    raw_data = json.load(f)
+                    assert len(raw_data) == 4  # 3 models + metadata
+                    assert "_metadata" in raw_data
+                    assert "_metadata" not in usage_data
 
     def test_load_usage_empty(self):
         """Test loading usage when no data exists."""
@@ -169,12 +176,18 @@ class TestUsageTracker:
                 record_usage("claude-3-opus-20240229", 200, 100)
                 record_usage("model_with_underscores", 150, 75)
                 
+                # Check the filtered usage data (what load_usage returns)
+                usage_data = load_usage()
+                assert len(usage_data) == 3
+                assert "gpt-4-turbo-preview" in usage_data
+                assert "claude-3-opus-20240229" in usage_data
+                assert "model_with_underscores" in usage_data
+                
+                # Check that metadata is present in raw file but not in load_usage result
                 with open(usage_file, 'r') as f:
-                    data = json.load(f)
-                    assert len(data) == 3
-                    assert "gpt-4-turbo-preview" in data
-                    assert "claude-3-opus-20240229" in data
-                    assert "model_with_underscores" in data
+                    raw_data = json.load(f)
+                    assert len(raw_data) == 4  # 3 models + metadata
+                    assert "_metadata" in raw_data
 
     def test_load_usage_invalid_json(self):
         """Test loading usage with invalid JSON file."""
@@ -201,4 +214,69 @@ class TestUsageTracker:
         gpt35_pricing = MODEL_PRICING["gpt-3.5-turbo"]
         assert isinstance(gpt35_pricing, tuple)
         assert len(gpt35_pricing) == 2
-        assert all(isinstance(price, float) for price in gpt35_pricing) 
+        assert all(isinstance(price, float) for price in gpt35_pricing)
+        
+    def test_reset_usage_functionality(self):
+        """Test the reset usage functionality."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            usage_file = Path(temp_dir) / "test_usage.json"
+            
+            with patch('nagatha_assistant.utils.usage_tracker._FILE_PATH', usage_file):
+                # Record some initial usage
+                record_usage("gpt-4", 100, 50)
+                record_usage("gpt-3.5-turbo", 200, 100)
+                
+                # Verify data exists
+                usage_data = load_usage()
+                assert len(usage_data) == 2
+                assert usage_data["gpt-4"]["prompt_tokens"] == 100
+                
+                # Reset usage
+                reset_usage()
+                
+                # Verify data is cleared
+                usage_data_after_reset = load_usage()
+                assert len(usage_data_after_reset) == 0
+                
+                # Verify reset info is available
+                reset_info = get_reset_info()
+                assert "reset_timestamp" in reset_info
+                assert "reset_count" in reset_info
+                assert reset_info["reset_count"] == 1
+                assert reset_info["reset_timestamp"] is not None
+                
+    def test_reset_usage_preserves_count(self):
+        """Test that reset usage preserves the reset count across multiple resets."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            usage_file = Path(temp_dir) / "test_usage.json"
+            
+            with patch('nagatha_assistant.utils.usage_tracker._FILE_PATH', usage_file):
+                # First reset
+                reset_usage()
+                reset_info = get_reset_info()
+                assert reset_info["reset_count"] == 1
+                
+                # Add some data
+                record_usage("gpt-4", 100, 50)
+                
+                # Second reset
+                reset_usage()
+                reset_info = get_reset_info()
+                assert reset_info["reset_count"] == 2
+                
+    def test_get_reset_info_empty(self):
+        """Test get_reset_info when no reset has occurred."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            usage_file = Path(temp_dir) / "test_usage.json"
+            
+            with patch('nagatha_assistant.utils.usage_tracker._FILE_PATH', usage_file):
+                # Before any usage or reset
+                reset_info = get_reset_info()
+                assert reset_info == {}
+                
+                # After recording usage but no reset
+                record_usage("gpt-4", 100, 50)
+                reset_info = get_reset_info()
+                assert "reset_timestamp" in reset_info
+                assert reset_info["reset_timestamp"] is None
+                assert reset_info["reset_count"] == 0 
