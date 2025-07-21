@@ -22,7 +22,7 @@ DATABASES = {
     }
 }
 
-# Add celery and redis for production
+# Add django_celery_beat for Celery Beat functionality
 INSTALLED_APPS += [
     'django_celery_beat',
 ]

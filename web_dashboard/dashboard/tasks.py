@@ -33,10 +33,16 @@ def process_user_message(self, session_id, message_content, user_id=None):
         adapter = NagathaAdapter()
         
         # Send message to Nagatha
-        response = asyncio.run(adapter.send_message(
-            session_id=session.nagatha_session_id,
-            message=message_content
-        ))
+        # Create a new event loop for this task to avoid conflicts with Celery
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            response = loop.run_until_complete(adapter.send_message(
+                session_id=session.nagatha_session_id,
+                message=message_content
+            ))
+        finally:
+            loop.close()
         
         # Save assistant response
         assistant_message = Message.objects.create(
@@ -90,7 +96,13 @@ def refresh_system_status():
     """Refresh system status information."""
     try:
         adapter = NagathaAdapter()
-        status_info = asyncio.run(adapter.get_system_status())
+        # Create a new event loop for this task to avoid conflicts with Celery
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            status_info = loop.run_until_complete(adapter.get_system_status())
+        finally:
+            loop.close()
         
         # Create new status record
         SystemStatus.objects.create(

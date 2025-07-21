@@ -18,8 +18,10 @@ DATABASES = {
     }
 }
 
-# Note: django_celery_beat is not needed for basic development
-# It's only needed for production with scheduled tasks
+# Add django_celery_beat for Celery Beat functionality
+INSTALLED_APPS += [
+    'django_celery_beat',
+]
 
 # Cache (Redis) - For development
 CACHES = {
@@ -40,7 +42,8 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
 
-# Note: Celery Beat scheduler is not needed for basic development
+# Celery Beat Configuration
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 # CORS settings for development
 CORS_ALLOWED_ORIGINS = [

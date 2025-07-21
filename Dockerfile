@@ -32,6 +32,10 @@ COPY src /app/nagatha_src
 # Add nagatha_src to Python path in environment
 ENV PYTHONPATH="/app/nagatha_src:$PYTHONPATH"
 
+# Copy migrations directory and alembic config
+COPY migrations /app/migrations
+COPY alembic.ini /app/alembic.ini
+
 # Copy project files
 COPY web_dashboard /app/
 
