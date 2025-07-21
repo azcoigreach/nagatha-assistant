@@ -1,0 +1,107 @@
+{% extends 'dashboard/base.html' %}
+{% load static %}
+
+{% block title %}Session {{ session.nagatha_session_id }} - Nagatha Assistant{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex align-items-center">
+                <div class="flex-grow-1">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-chat-dots me-2"></i>
+                        {{ session.title|default:"Untitled Session" }}
+                    </h5>
+                    <small class="text-muted">
+                        Session {{ session.nagatha_session_id }} • Created {{ session.created_at|date:"M d, Y H:i" }}
+                    </small>
+                </div>
+                <div>
+                    <a href="{% url 'dashboard:index' %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left"></i> Back to Dashboard
+                    </a>
+                </div>
+            </div>
+            
+            <div class="card-body">
+                <!-- Messages Container -->
+                <div id="messages-container" class="border rounded p-3 mb-3" style="height: 500px; overflow-y: auto; background-color: #f8f9fa;">
+                    {% if messages %}
+                        {% for message in messages %}
+                            <div class="message mb-3 {% if message.message_type == 'user' %}text-end{% endif %}">
+                                <div class="d-inline-block max-width-75 p-3 rounded 
+                                    {% if message.message_type == 'user' %}bg-primary text-white
+                                    {% elif message.message_type == 'assistant' %}bg-white border
+                                    {% elif message.message_type == 'system' %}bg-info text-white
+                                    {% else %}bg-danger text-white{% endif %}">
+                                    
+                                    <div class="message-content">{{ message.content|linebreaks }}</div>
+                                    <small class="opacity-75 d-block mt-1">
+                                        {{ message.created_at|date:"H:i" }}
+                                    </small>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="text-center text-muted">
+                            <i class="bi bi-chat-text display-4"></i>
+                            <p class="mt-2">No messages in this session yet</p>
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Message Input -->
+                <form id="message-form" class="d-flex">
+                    <input type="hidden" id="session-id" value="{{ session.id }}">
+                    <input type="text" 
+                           id="message-input" 
+                           class="form-control me-2" 
+                           placeholder="Type your message here...">
+                    <button type="submit" class="btn btn-primary" id="send-button">
+                        <i class="bi bi-send"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.max-width-75 {
+    max-width: 75%;
+}
+
+.message {
+    clear: both;
+}
+
+.message.text-end .d-inline-block {
+    text-align: left;
+}
+
+#messages-container {
+    scroll-behavior: smooth;
+}
+</style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'dashboard/js/chat.js' %}"></script>
+<script>
+    // Auto-scroll to bottom of messages
+    function scrollToBottom() {
+        const container = document.getElementById('messages-container');
+        container.scrollTop = container.scrollHeight;
+    }
+    
+    // Scroll to bottom on page load
+    document.addEventListener('DOMContentLoaded', scrollToBottom);
+    
+    // Poll for new messages every 5 seconds
+    const sessionId = document.getElementById('session-id').value;
+    setInterval(() => {
+        loadSessionMessages(sessionId);
+    }, 5000);
+</script>
+{% endblock %}

@@ -1,0 +1,29 @@
+# Django and web framework dependencies
+Django==4.2.11
+djangorestframework==3.14.0
+django-cors-headers==4.3.1
+whitenoise==6.6.0
+django-celery-beat==2.5.0
+
+# Database
+psycopg2-binary==2.9.9
+
+# Caching and task queue
+redis==5.0.1
+django-redis==5.4.0
+celery==5.3.4
+
+# Environment and utilities
+python-dotenv==1.0.1
+gunicorn==21.2.0
+
+# Existing Nagatha dependencies
+openai==1.97.0
+sqlalchemy==2.0.41
+alembic==1.16.4
+aiohttp==3.12.14
+aiosqlite==0.21.0
+mcp==1.12.0
+psutil==7.0.0
+textual==0.86.2
+pyperclip==1.9.0
