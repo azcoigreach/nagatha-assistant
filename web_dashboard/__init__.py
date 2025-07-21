@@ -1,0 +1,1 @@
+# Django Web Dashboard for Nagatha Assistant

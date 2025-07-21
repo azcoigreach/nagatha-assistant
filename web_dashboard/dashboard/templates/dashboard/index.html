@@ -1,0 +1,212 @@
+{% extends 'dashboard/base.html' %}
+{% load static %}
+
+{% block title %}Dashboard - Nagatha Assistant{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- System Status Card -->
+    <div class="col-lg-4 col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex align-items-center">
+                <i class="bi bi-speedometer2 me-2"></i>
+                <h6 class="card-title mb-0">System Status</h6>
+                <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="refreshSystemStatus()">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="system-status-content">
+                    {% if system_status %}
+                        <div class="row g-3">
+                            <div class="col-6">
+                                <div class="text-center">
+                                    <div class="h4 text-primary">{{ system_status.mcp_servers_connected }}</div>
+                                    <small class="text-muted">MCP Servers</small>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="text-center">
+                                    <div class="h4 text-info">{{ system_status.total_tools_available }}</div>
+                                    <small class="text-muted">Tools Available</small>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span>Health:</span>
+                                    <span class="badge bg-{% if system_status.system_health == 'healthy' %}success{% elif system_status.system_health == 'degraded' %}warning{% else %}danger{% endif %}">
+                                        {{ system_status.system_health|title }}
+                                    </span>
+                                </div>
+                            </div>
+                            {% if system_status.cpu_usage %}
+                            <div class="col-12">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <small>CPU Usage</small>
+                                    <small>{{ system_status.cpu_usage|floatformat:1 }}%</small>
+                                </div>
+                                <div class="progress" style="height: 8px;">
+                                    <div class="progress-bar" style="width: {{ system_status.cpu_usage }}%"></div>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    {% else %}
+                        <div class="text-center text-muted">
+                            <i class="bi bi-exclamation-circle display-4"></i>
+                            <p class="mt-2">No status data available</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat Interface -->
+    <div class="col-lg-8 col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex align-items-center">
+                <i class="bi bi-chat-dots me-2"></i>
+                <h6 class="card-title mb-0">Chat with Nagatha</h6>
+                {% if not has_openai_key %}
+                    <span class="badge bg-warning ms-auto">No OpenAI API Key</span>
+                {% endif %}
+            </div>
+            <div class="card-body d-flex flex-column">
+                <!-- Messages Area -->
+                <div id="messages-container" class="flex-grow-1 border rounded p-3 mb-3" style="height: 300px; overflow-y: auto; background-color: #f8f9fa;">
+                    <div class="text-center text-muted">
+                        <i class="bi bi-chat-text display-4"></i>
+                        <p class="mt-2">Start a conversation with Nagatha Assistant</p>
+                    </div>
+                </div>
+                
+                <!-- Message Input -->
+                <form id="message-form" class="d-flex">
+                    <input type="text" 
+                           id="message-input" 
+                           class="form-control me-2" 
+                           placeholder="Type your message here..." 
+                           {% if not has_openai_key %}disabled{% endif %}>
+                    <button type="submit" 
+                            class="btn btn-primary" 
+                            id="send-button"
+                            {% if not has_openai_key %}disabled{% endif %}>
+                        <i class="bi bi-send"></i>
+                    </button>
+                </form>
+                
+                {% if not has_openai_key %}
+                <small class="text-warning mt-2">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    OpenAI API key not configured. Please set OPENAI_API_KEY environment variable.
+                </small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Recent Sessions -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header d-flex align-items-center">
+                <i class="bi bi-clock-history me-2"></i>
+                <h6 class="card-title mb-0">Recent Sessions</h6>
+            </div>
+            <div class="card-body">
+                {% if recent_sessions %}
+                    <div class="list-group list-group-flush">
+                        {% for session in recent_sessions %}
+                            <div class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                <div>
+                                    <h6 class="mb-1">{{ session.title|default:"Untitled Session" }}</h6>
+                                    <small class="text-muted">{{ session.updated_at|date:"M d, Y H:i" }}</small>
+                                </div>
+                                <div>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="loadSession('{{ session.id }}')">
+                                        <i class="bi bi-arrow-right"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center text-muted">
+                        <i class="bi bi-chat-square display-4"></i>
+                        <p class="mt-2">No recent sessions</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Tasks -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header d-flex align-items-center">
+                <i class="bi bi-list-task me-2"></i>
+                <h6 class="card-title mb-0">Active Tasks</h6>
+                <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="refreshTasks()">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="tasks-container">
+                    {% if active_tasks %}
+                        <div class="list-group list-group-flush">
+                            {% for task in active_tasks %}
+                                <div class="list-group-item px-0">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div class="flex-grow-1">
+                                            <h6 class="mb-1">{{ task.task_name|title }}</h6>
+                                            <p class="mb-1 text-muted small">{{ task.description }}</p>
+                                            <small class="text-muted">{{ task.created_at|date:"M d, H:i" }}</small>
+                                        </div>
+                                        <div>
+                                            <span class="badge bg-{% if task.status == 'running' %}primary{% elif task.status == 'pending' %}secondary{% else %}success{% endif %}">
+                                                {{ task.status|title }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    {% if task.status == 'running' and task.progress > 0 %}
+                                        <div class="progress mt-2" style="height: 6px;">
+                                            <div class="progress-bar" style="width: {{ task.progress }}%"></div>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="text-center text-muted">
+                            <i class="bi bi-check-circle display-4"></i>
+                            <p class="mt-2">No active tasks</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden current session ID -->
+<input type="hidden" id="current-session-id" value="">
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'dashboard/js/chat.js' %}"></script>
+<script>
+    // Auto-refresh system status every 30 seconds
+    setInterval(refreshSystemStatus, 30000);
+    
+    // Auto-refresh tasks every 10 seconds
+    setInterval(refreshTasks, 10000);
+    
+    // Initial load
+    document.addEventListener('DOMContentLoaded', function() {
+        refreshSystemStatus();
+        refreshTasks();
+    });
+</script>
+{% endblock %}

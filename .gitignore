@@ -13,3 +13,18 @@ nagatha_usage.json
 mcp.json
 .coverage
 .discord_bot.pid
+
+# Docker-related files
+.env.docker
+.env.production
+backups/
+logs/
+
+# Django
+web_dashboard/staticfiles/
+web_dashboard/media/
+web_dashboard/*.sqlite3
+web_dashboard/celerybeat-schedule
+
+# Local development
+docker-compose.override.yml
