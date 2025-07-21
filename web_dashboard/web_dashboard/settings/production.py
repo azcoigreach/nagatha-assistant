@@ -27,6 +27,9 @@ INSTALLED_APPS += [
     'django_celery_beat',
 ]
 
+# Celery Beat Configuration
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
 # Cache (Redis) - Only for production
 CACHES = {
     'default': {

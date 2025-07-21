@@ -47,6 +47,7 @@ services:
     container_name: nagatha_web
     environment:
       - DEBUG=${DEBUG:-False}
+      - DJANGO_ENV=${DJANGO_ENV:-production}
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
       - DB_NAME=${DB_NAME:-nagatha_dashboard}
       - DB_USER=${DB_USER:-nagatha}
@@ -90,6 +91,7 @@ services:
     container_name: nagatha_celery
     environment:
       - DEBUG=${DEBUG:-False}
+      - DJANGO_ENV=${DJANGO_ENV:-production}
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
       - DB_NAME=${DB_NAME:-nagatha_dashboard}
       - DB_USER=${DB_USER:-nagatha}
@@ -125,6 +127,7 @@ services:
     container_name: nagatha_celery_beat
     environment:
       - DEBUG=${DEBUG:-False}
+      - DJANGO_ENV=${DJANGO_ENV:-production}
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
       - DB_NAME=${DB_NAME:-nagatha_dashboard}
       - DB_USER=${DB_USER:-nagatha}
