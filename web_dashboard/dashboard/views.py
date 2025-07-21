@@ -21,6 +21,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class ComponentsExampleView(TemplateView):
+    """Example page showcasing Bootstrap 5 components."""
+    template_name = 'dashboard/components_example.html'
+
+
 class DashboardView(TemplateView):
     """Main dashboard view."""
     template_name = 'dashboard/index.html'

@@ -6,6 +6,10 @@
     <title>{% block title %}Nagatha Assistant Dashboard{% endblock %}</title>
     {% load static %}
     
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="{% static 'dashboard/img/favicon.svg' %}">
+    <link rel="icon" type="image/png" href="{% static 'dashboard/img/favicon.png' %}">
+    
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -17,10 +21,11 @@
 </head>
 <body>
     <!-- Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{% url 'dashboard:index' %}">
-                <i class="bi bi-robot"></i> Nagatha Assistant
+            <a class="navbar-brand d-flex align-items-center" href="{% url 'dashboard:index' %}">
+                <img src="{% static 'dashboard/img/favicon.svg' %}" alt="Nagatha" width="24" height="24" class="me-2">
+                <span class="fw-bold">Nagatha Assistant</span>
             </a>
             
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -30,8 +35,13 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'dashboard:index' %}">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'index' %}active{% endif %}" href="{% url 'dashboard:index' %}">
                             <i class="bi bi-house"></i> Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="toggleSidebar()">
+                            <i class="bi bi-layout-sidebar"></i> Modules
                         </a>
                     </li>
                 </ul>
@@ -43,9 +53,13 @@
                                 <i class="bi bi-person-circle"></i> {{ user.username }}
                             </a>
                             <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="/admin/">Admin</a></li>
+                                <li><a class="dropdown-item" href="/admin/">
+                                    <i class="bi bi-gear"></i> Admin
+                                </a></li>
                                 <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item" href="/admin/logout/">Logout</a></li>
+                                <li><a class="dropdown-item" href="/admin/logout/">
+                                    <i class="bi bi-box-arrow-right"></i> Logout
+                                </a></li>
                             </ul>
                         </li>
                     {% else %}
@@ -60,28 +74,78 @@
         </div>
     </nav>
 
-    <!-- Main Content -->
-    <main class="container-fluid py-4">
-        {% if messages %}
-            {% for message in messages %}
-                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <div class="d-flex">
+        <!-- Sidebar -->
+        <nav id="sidebar" class="sidebar bg-light border-end">
+            <div class="sidebar-content">
+                <div class="sidebar-header p-3 border-bottom">
+                    <h6 class="mb-0">
+                        <i class="bi bi-puzzle"></i> Dashboard Modules
+                    </h6>
                 </div>
-            {% endfor %}
-        {% endif %}
+                <ul class="list-unstyled sidebar-nav p-3">
+                    <li class="mb-2">
+                        <a href="{% url 'dashboard:index' %}" class="sidebar-link {% if request.resolver_match.url_name == 'index' %}active{% endif %}">
+                            <i class="bi bi-speedometer2"></i> Overview
+                        </a>
+                    </li>
+                    <li class="mb-2">
+                        <a href="#" class="sidebar-link" data-bs-toggle="modal" data-bs-target="#chatModal">
+                            <i class="bi bi-chat-dots"></i> Chat Interface
+                        </a>
+                    </li>
+                    <li class="mb-2">
+                        <a href="{% url 'dashboard:components_example' %}" class="sidebar-link {% if request.resolver_match.url_name == 'components_example' %}active{% endif %}">
+                            <i class="bi bi-grid-3x3-gap"></i> Components
+                        </a>
+                    </li>
+                    <li class="mb-2">
+                        <a href="#" class="sidebar-link">
+                            <i class="bi bi-diagram-3"></i> MCP Tools
+                        </a>
+                    </li>
+                    <li class="mb-2">
+                        <a href="#" class="sidebar-link">
+                            <i class="bi bi-bell"></i> Notifications
+                        </a>
+                    </li>
+                    <li class="mb-2">
+                        <a href="#" class="sidebar-link">
+                            <i class="bi bi-bar-chart"></i> Analytics
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
 
-        {% block content %}{% endblock %}
-    </main>
+        <!-- Main Content -->
+        <main class="main-content flex-fill">
+            <div class="container-fluid py-4">
+                {% if messages %}
+                    {% for message in messages %}
+                        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
 
     <!-- Footer -->
-    <footer class="bg-light border-top mt-auto py-3">
+    <footer class="bg-light border-top py-3">
         <div class="container-fluid">
-            <div class="row">
+            <div class="row align-items-center">
                 <div class="col-md-6">
-                    <small class="text-muted">
-                        © 2024 Nagatha Assistant Dashboard
-                    </small>
+                    <div class="d-flex align-items-center">
+                        <img src="{% static 'dashboard/img/favicon.svg' %}" alt="Nagatha" width="20" height="20" class="me-2">
+                        <small class="text-muted">
+                            © 2024 Nagatha Assistant Dashboard - Your AI-Powered Personal Agent
+                        </small>
+                    </div>
                 </div>
                 <div class="col-md-6 text-end">
                     <small class="text-muted" id="system-status">
@@ -92,10 +156,79 @@
         </div>
     </footer>
 
+    <!-- Chat Modal -->
+    <div class="modal fade" id="chatModal" tabindex="-1" aria-labelledby="chatModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="chatModalLabel">
+                        <i class="bi bi-chat-dots"></i> Chat with Nagatha
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="modal-messages-container" class="border rounded p-3 mb-3" style="height: 300px; overflow-y: auto; background-color: #f8f9fa;">
+                        <div class="text-center text-muted">
+                            <i class="bi bi-chat-text display-4"></i>
+                            <p class="mt-2">Start a conversation with Nagatha Assistant</p>
+                        </div>
+                    </div>
+                    <form id="modal-message-form" class="d-flex">
+                        <input type="text" 
+                               id="modal-message-input" 
+                               class="form-control me-2" 
+                               placeholder="Type your message here..." 
+                               {% if not has_openai_key %}disabled{% endif %}>
+                        <button type="submit" 
+                                class="btn btn-primary" 
+                                id="modal-send-button"
+                                {% if not has_openai_key %}disabled{% endif %}>
+                            <i class="bi bi-send"></i>
+                        </button>
+                    </form>
+                    {% if not has_openai_key %}
+                    <small class="text-warning mt-2 d-block">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        OpenAI API key not configured. Please set OPENAI_API_KEY environment variable.
+                    </small>
+                    {% endif %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle"></i> Close
+                    </button>
+                    <button type="button" class="btn btn-primary" onclick="clearChat()">
+                        <i class="bi bi-arrow-clockwise"></i> New Chat
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Custom JS -->
     <script src="{% static 'dashboard/js/dashboard.js' %}"></script>
+    
+    <script>
+        // Toggle sidebar
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('active');
+        }
+        
+        // Clear chat in modal
+        function clearChat() {
+            document.getElementById('modal-messages-container').innerHTML = `
+                <div class="text-center text-muted">
+                    <i class="bi bi-chat-text display-4"></i>
+                    <p class="mt-2">Start a conversation with Nagatha Assistant</p>
+                </div>
+            `;
+            document.getElementById('modal-message-input').value = '';
+            document.getElementById('current-session-id').value = '';
+        }
+    </script>
     
     {% block extra_scripts %}{% endblock %}
 </body>

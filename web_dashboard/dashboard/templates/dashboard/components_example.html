@@ -1,0 +1,358 @@
+{% extends 'dashboard/base.html' %}
+{% load static %}
+
+{% block title %}Bootstrap Components Example - Nagatha Assistant{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-grid-3x3-gap"></i> Bootstrap 5 Component Examples
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">
+                    This page demonstrates various Bootstrap 5 components integrated into the Nagatha Assistant Dashboard.
+                    These examples can be used as templates for building modular dashboard features.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Grid System Example -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="bi bi-grid"></i> Grid System
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-2">
+                    <div class="col-6">
+                        <div class="p-2 bg-primary text-white text-center rounded">col-6</div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-2 bg-secondary text-white text-center rounded">col-6</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="p-2 bg-success text-white text-center rounded">col-4</div>
+                    </div>
+                    <div class="col-8">
+                        <div class="p-2 bg-info text-white text-center rounded">col-8</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="bi bi-ui-checks"></i> Form Controls
+                </h6>
+            </div>
+            <div class="card-body">
+                <form>
+                    <div class="mb-3">
+                        <label for="exampleInput" class="form-label">Text Input</label>
+                        <input type="text" class="form-control" id="exampleInput" placeholder="Enter text">
+                    </div>
+                    <div class="mb-3">
+                        <label for="exampleSelect" class="form-label">Select</label>
+                        <select class="form-select" id="exampleSelect">
+                            <option selected>Choose option...</option>
+                            <option value="1">Option 1</option>
+                            <option value="2">Option 2</option>
+                        </select>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="exampleCheck">
+                        <label class="form-check-label" for="exampleCheck">
+                            Check me out
+                        </label>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="bi bi-toggles"></i> Action Buttons
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#exampleModal">
+                        <i class="bi bi-window"></i> Open Modal
+                    </button>
+                    <button type="button" class="btn btn-success">
+                        <i class="bi bi-check-circle"></i> Success Action
+                    </button>
+                    <button type="button" class="btn btn-warning">
+                        <i class="bi bi-exclamation-triangle"></i> Warning Action
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary">
+                        <i class="bi bi-info-circle"></i> Info Action
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Alerts and Progress -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="bi bi-exclamation-diamond"></i> Alert Examples
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="bi bi-check-circle-fill"></i>
+                    <strong>Success!</strong> Your operation completed successfully.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                <div class="alert alert-warning" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <strong>Warning!</strong> Please check your configuration.
+                </div>
+                <div class="alert alert-info" role="alert">
+                    <i class="bi bi-info-circle-fill"></i>
+                    <strong>Info:</strong> This is an informational message.
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="bi bi-bar-chart"></i> Progress Indicators
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Task Progress (75%)</label>
+                    <div class="progress">
+                        <div class="progress-bar" style="width: 75%"></div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">System Load (45%)</label>
+                    <div class="progress">
+                        <div class="progress-bar bg-warning" style="width: 45%"></div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Memory Usage (90%)</label>
+                    <div class="progress">
+                        <div class="progress-bar bg-danger" style="width: 90%"></div>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                    <span>Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lists and Tables -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="bi bi-list-ul"></i> List Groups
+                </h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-1">Active Sessions</h6>
+                            <p class="mb-1 text-muted">Currently running chat sessions</p>
+                        </div>
+                        <span class="badge bg-primary rounded-pill">3</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-1">MCP Tools</h6>
+                            <p class="mb-1 text-muted">Available integration tools</p>
+                        </div>
+                        <span class="badge bg-success rounded-pill">12</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-1">Pending Tasks</h6>
+                            <p class="mb-1 text-muted">Queued background tasks</p>
+                        </div>
+                        <span class="badge bg-warning rounded-pill">2</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="bi bi-table"></i> Data Table
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>1</td>
+                                <td>Web Scraper</td>
+                                <td><span class="badge bg-success">Active</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-gear"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>2</td>
+                                <td>Database Monitor</td>
+                                <td><span class="badge bg-warning">Pending</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-gear"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>3</td>
+                                <td>Email Processor</td>
+                                <td><span class="badge bg-danger">Error</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-gear"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Example Modal -->
+<div class="modal fade" id="exampleModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="exampleModalLabel">
+                    <i class="bi bi-gear"></i> Configuration Settings
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>General Settings</h6>
+                        <form>
+                            <div class="mb-3">
+                                <label for="modalInput1" class="form-label">API Endpoint</label>
+                                <input type="url" class="form-control" id="modalInput1" value="https://api.example.com">
+                            </div>
+                            <div class="mb-3">
+                                <label for="modalInput2" class="form-label">Timeout (seconds)</label>
+                                <input type="number" class="form-control" id="modalInput2" value="30">
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="modalCheck1" checked>
+                                <label class="form-check-label" for="modalCheck1">
+                                    Enable debugging
+                                </label>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Advanced Options</h6>
+                        <div class="alert alert-info">
+                            <i class="bi bi-lightbulb"></i>
+                            <strong>Tip:</strong> These settings affect system performance.
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="modalSwitch1">
+                            <label class="form-check-label" for="modalSwitch1">
+                                Auto-retry failed requests
+                            </label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="modalSwitch2" checked>
+                            <label class="form-check-label" for="modalSwitch2">
+                                Cache responses
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle"></i> Cancel
+                </button>
+                <button type="button" class="btn btn-primary">
+                    <i class="bi bi-check-circle"></i> Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Example: Auto-dismiss alerts after 5 seconds
+    setTimeout(function() {
+        const alerts = document.querySelectorAll('.alert-dismissible');
+        alerts.forEach(alert => {
+            const closeBtn = alert.querySelector('.btn-close');
+            if (closeBtn) {
+                closeBtn.click();
+            }
+        });
+    }, 5000);
+    
+    // Example: Animate progress bars
+    const progressBars = document.querySelectorAll('.progress-bar');
+    progressBars.forEach(bar => {
+        const width = bar.style.width;
+        bar.style.width = '0%';
+        setTimeout(() => {
+            bar.style.width = width;
+        }, 500);
+    });
+});
+</script>
+{% endblock %}
