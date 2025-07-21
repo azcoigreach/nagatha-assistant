@@ -13,7 +13,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     ports:
-      - "5432:5432"
+      - "5433:5432"
     networks:
       - nagatha_network
     restart: unless-stopped
@@ -65,7 +65,7 @@ services:
       - logs_volume:/app/logs
       - ./src:/app/nagatha_src:ro
     ports:
-      - "8000:8000"
+      - "8001:8000"
     depends_on:
       db:
         condition: service_healthy

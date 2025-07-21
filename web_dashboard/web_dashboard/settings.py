@@ -20,7 +20,8 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-key-change-in-production')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0').split(',')
+# Allow all hosts in development (use specific hosts in production)
+ALLOWED_HOSTS = ['*'] if DEBUG else os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0').split(',')
 
 # Application definition
 INSTALLED_APPS = [
@@ -177,7 +178,8 @@ NAGATHA_LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
 
 # Security Settings
 if not DEBUG:
-    SECURE_SSL_REDIRECT = True
+    # Only enable SSL redirect in production with proper SSL setup
+    # SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_BROWSER_XSS_FILTER = True
