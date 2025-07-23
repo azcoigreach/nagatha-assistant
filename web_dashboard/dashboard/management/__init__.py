@@ -1,1 +1,1 @@
-# Management commands for dashboard app
+# Management commands for the dashboard app

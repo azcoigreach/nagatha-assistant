@@ -4,8 +4,8 @@ Celery configuration for web_dashboard project.
 import os
 from celery import Celery
 
-# Set the default Django settings module for the 'celery' program.
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'web_dashboard.settings')
+# Set the Django settings module for the 'celery' program.
+os.environ['DJANGO_SETTINGS_MODULE'] = os.getenv('DJANGO_SETTINGS_MODULE', 'web_dashboard.settings.production')
 
 app = Celery('web_dashboard')
 

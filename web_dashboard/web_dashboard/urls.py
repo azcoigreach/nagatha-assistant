@@ -18,11 +18,15 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from dashboard import views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('dashboard.urls')),
     path('api/', include('dashboard.api_urls')),
+    # Temporary test endpoints
+    path('api/test-simple-task/', views.test_simple_task_api, name='test_simple_task_api'),
+    path('api/test-minimal-orm/', views.test_minimal_orm_api, name='test_minimal_orm_api'),
 ]
 
 # Serve media files in development

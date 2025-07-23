@@ -28,3 +28,4 @@ web_dashboard/celerybeat-schedule
 
 # Local development
 docker-compose.override.yml
+.env.backup

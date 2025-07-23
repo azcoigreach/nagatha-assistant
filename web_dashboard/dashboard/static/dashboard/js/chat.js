@@ -121,7 +121,7 @@ function addMessageToUI(message) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message mb-3 fade-in ${message.message_type === 'user' ? 'text-end' : ''}`;
     
-    let messageClass = 'bg-white border';
+    let messageClass = 'bg-secondary border'; // Changed from bg-white to bg-secondary for dark theme
     if (message.message_type === 'user') {
         messageClass = 'bg-primary text-white';
     } else if (message.message_type === 'system') {
@@ -172,6 +172,19 @@ async function pollForTaskCompletion(taskId, maxAttempts = 30) {
             
         } catch (error) {
             console.error('Task polling error:', error);
+            
+            // If the task is not found (404), it means the Task record wasn't created
+            // This is expected since we removed Task record creation to fix the greenlet issue
+            // In this case, just load the session messages directly
+            if (error.message.includes('Task not found') || error.message.includes('404')) {
+                console.log('Task record not found, loading session messages directly');
+                if (currentSessionId) {
+                    await loadSessionMessages(currentSessionId);
+                }
+                return;
+            }
+            
+            // For other errors, show the error message
             addMessageToUI({
                 content: `Error: ${error.message}`,
                 message_type: 'error',

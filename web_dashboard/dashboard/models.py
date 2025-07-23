@@ -13,7 +13,7 @@ import uuid
 class Session(models.Model):
     """Web representation of a Nagatha session."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    nagatha_session_id = models.IntegerField(unique=True, null=True, blank=True)
+    nagatha_session_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     title = models.CharField(max_length=200, blank=True)
     created_at = models.DateTimeField(default=timezone.now)

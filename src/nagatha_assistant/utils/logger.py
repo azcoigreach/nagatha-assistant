@@ -26,6 +26,16 @@ def setup_logger(
     logger.setLevel(getattr(logging, log_level, logging.WARNING))
 
     log_file = os.getenv("LOG_FILE", "nagatha.log")
+    
+    # Ensure the log directory exists
+    log_dir = os.path.dirname(log_file)
+    if log_dir and not os.path.exists(log_dir):
+        try:
+            os.makedirs(log_dir, exist_ok=True)
+        except (OSError, PermissionError):
+            # Fallback to current directory if we can't create the log directory
+            log_file = "nagatha.log"
+    
     handler = RotatingFileHandler(
         log_file, maxBytes=10 * 1024 * 1024, backupCount=5
     )
