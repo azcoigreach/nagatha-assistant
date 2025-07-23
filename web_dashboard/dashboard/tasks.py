@@ -1,6 +1,10 @@
 """
 Celery tasks for the Nagatha Dashboard.
+
+This module provides Celery tasks for the Nagatha Dashboard, including
+both legacy Redis-based tasks and new Nagatha core integration tasks.
 """
+
 import asyncio
 import sys
 import os
@@ -10,6 +14,15 @@ from django.utils import timezone
 from django.conf import settings
 from .models import Session, Message, SystemStatus, Task
 from .nagatha_redis_adapter import NagathaRedisAdapter
+from .nagatha_real_adapter import NagathaRealAdapter
+from .nagatha_celery_integration import (
+    process_message_with_nagatha,
+    check_mcp_servers_health,
+    cleanup_memory_and_maintenance,
+    track_usage_metrics,
+    process_scheduled_tasks,
+    reload_mcp_configuration
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -222,35 +235,25 @@ def process_user_message(self, session_id, message_content, user_id=None):
         print(f"DEBUG: User message created with ID: {user_message.id}")
         logger.info(f"User message created with ID: {user_message.id}")
         
-        # Try to use Redis-based Nagatha adapter for full functionality
+        # Try to use real Nagatha adapter for full functionality
         try:
-            print("DEBUG: Attempting to use Redis-based Nagatha adapter for message processing")
-            logger.info("Attempting to use Redis-based Nagatha adapter for message processing")
-            adapter = NagathaRedisAdapter()
-            print("DEBUG: NagathaRedisAdapter created successfully")
-            logger.info("NagathaRedisAdapter created successfully")
+            print("DEBUG: Attempting to use real Nagatha adapter for message processing")
+            logger.info("Attempting to use real Nagatha adapter for message processing")
+            adapter = NagathaRealAdapter()
+            print("DEBUG: NagathaRealAdapter created successfully")
+            logger.info("NagathaRealAdapter created successfully")
             
             # Use asyncio.run() which properly handles the event loop
             try:
-                # Process message with Nagatha using Redis storage
-                nagatha_session_id = session.nagatha_session_id
-                print(f"DEBUG: Processing message with Nagatha session ID: {nagatha_session_id}")
-                logger.info(f"Processing message with Nagatha session ID: {nagatha_session_id}")
+                # Process message with real Nagatha system
+                print(f"DEBUG: Processing message with real Nagatha system")
+                logger.info(f"Processing message with real Nagatha system")
                 
                 response = asyncio.run(
-                    adapter.send_message(nagatha_session_id, message_content)
+                    adapter.send_message(session.nagatha_session_id, message_content)
                 )
                 print(f"DEBUG: Nagatha response received: {response[:100]}...")
                 logger.info(f"Nagatha response received: {response[:100]}...")
-                
-                # Update session with Nagatha session ID if this was a new session
-                if nagatha_session_id is None and response:
-                    # Create new Nagatha session ID
-                    new_nagatha_session = asyncio.run(adapter.start_session())
-                    session.nagatha_session_id = new_nagatha_session
-                    session.save()
-                    print(f"DEBUG: New Nagatha session created: {new_nagatha_session}")
-                    logger.info(f"New Nagatha session created: {new_nagatha_session}")
                 
             except Exception as async_error:
                 print(f"DEBUG: Async operation failed: {async_error}")
@@ -261,11 +264,11 @@ def process_user_message(self, session_id, message_content, user_id=None):
                 raise
                 
         except Exception as nagatha_error:
-            print(f"DEBUG: Redis adapter failed, falling back to simple response: {nagatha_error}")
-            logger.warning(f"Redis adapter failed, falling back to simple response: {nagatha_error}")
-            logger.warning(f"Redis error type: {type(nagatha_error)}")
+            print(f"DEBUG: Real Nagatha adapter failed, falling back to simple response: {nagatha_error}")
+            logger.warning(f"Real Nagatha adapter failed, falling back to simple response: {nagatha_error}")
+            logger.warning(f"Nagatha error type: {type(nagatha_error)}")
             import traceback
-            logger.warning(f"Redis error traceback: {traceback.format_exc()}")
+            logger.warning(f"Nagatha error traceback: {traceback.format_exc()}")
             
             # Fallback to simple response
             response = get_simple_response(message_content)
@@ -313,7 +316,8 @@ def process_user_message(self, session_id, message_content, user_id=None):
 def refresh_system_status():
     """Refresh system status information."""
     try:
-        adapter = NagathaRedisAdapter()
+        # Use the real Nagatha adapter to get actual MCP server and tool status
+        adapter = NagathaRealAdapter()
         
         # Use asyncio.run() which properly handles the event loop
         try:
@@ -321,7 +325,10 @@ def refresh_system_status():
             status_info = asyncio.run(adapter.get_system_status())
         except Exception as async_error:
             logger.error(f"Async operation failed: {async_error}")
-            raise
+            # Fallback to Redis adapter if real adapter fails
+            logger.info("Falling back to Redis adapter")
+            redis_adapter = NagathaRedisAdapter()
+            status_info = asyncio.run(redis_adapter.get_system_status())
         
         # Create new status record
         SystemStatus.objects.create(
@@ -340,6 +347,7 @@ def refresh_system_status():
         for status in old_statuses:
             status.delete()
         
+        logger.info(f"System status refreshed: {status_info.get('mcp_servers_connected', 0)} servers, {status_info.get('total_tools_available', 0)} tools")
         return {'success': True}
         
     except Exception as e:

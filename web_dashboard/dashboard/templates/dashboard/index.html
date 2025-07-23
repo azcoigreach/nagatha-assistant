@@ -11,6 +11,7 @@
             <div class="card-header d-flex align-items-center">
                 <i class="bi bi-speedometer2 me-2"></i>
                 <h6 class="card-title mb-0">System Status</h6>
+                <i id="system-status-update-icon" class="bi bi-check-circle-fill text-success ms-2" style="font-size: 0.8em; opacity: 0.3;"></i>
                 <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="refreshSystemStatus()">
                     <i class="bi bi-arrow-clockwise"></i>
                 </button>
@@ -47,6 +48,17 @@
                                 </div>
                                 <div class="progress" style="height: 8px;">
                                     <div class="progress-bar" style="width: {{ system_status.cpu_usage }}%"></div>
+                                </div>
+                            </div>
+                            {% endif %}
+                            {% if system_status.memory_usage %}
+                            <div class="col-12">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <small>Memory Usage</small>
+                                    <small>{{ system_status.memory_usage|floatformat:1 }}%</small>
+                                </div>
+                                <div class="progress" style="height: 8px;">
+                                    <div class="progress-bar bg-info" style="width: {{ system_status.memory_usage }}%"></div>
                                 </div>
                             </div>
                             {% endif %}

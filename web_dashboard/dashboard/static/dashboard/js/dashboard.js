@@ -1,5 +1,9 @@
 // Main dashboard JavaScript functionality
 
+// Auto-refresh interval for system status (2 minutes = 120000ms)
+const SYSTEM_STATUS_REFRESH_INTERVAL = 120000; // 2 minutes
+let systemStatusRefreshInterval = null;
+
 // CSRF token setup for Django
 function getCookie(name) {
     let cookieValue = null;
@@ -61,9 +65,13 @@ async function refreshSystemStatus() {
             statusButton.innerHTML = '<i class="bi bi-arrow-clockwise spinner-border spinner-border-sm"></i>';
         }
         
-        const data = await apiCall('/api/system-status/');
+        // Call API with refresh=true to trigger background refresh
+        const data = await apiCall('/api/system-status/?refresh=true');
         updateSystemStatusDisplay(data);
         updateFooterStatus(data);
+        
+        // Show pulsing update indicator
+        showUpdateIndicator();
         
     } catch (error) {
         console.error('Failed to refresh system status:', error);
@@ -153,6 +161,62 @@ function updateFooterStatus(data) {
         </span>
     `;
 }
+
+function showUpdateIndicator() {
+    const updateIcon = document.getElementById('system-status-update-icon');
+    if (updateIcon) {
+        // Make icon more visible during animation
+        updateIcon.style.opacity = '1';
+        updateIcon.style.transform = 'scale(1.2)';
+        
+        // Add pulsing animation class
+        updateIcon.classList.add('pulse-animation');
+        
+        // Remove the animation class and reset after 2 seconds
+        setTimeout(() => {
+            updateIcon.classList.remove('pulse-animation');
+            updateIcon.style.opacity = '0.3';
+            updateIcon.style.transform = 'scale(1)';
+        }, 2000);
+    }
+}
+
+// Auto-refresh functions
+function startAutoRefresh() {
+    if (systemStatusRefreshInterval) {
+        clearInterval(systemStatusRefreshInterval);
+    }
+    
+    systemStatusRefreshInterval = setInterval(async () => {
+        try {
+            console.log('Auto-refreshing system status...');
+            const data = await apiCall('/api/system-status/?refresh=true');
+            updateSystemStatusDisplay(data);
+            updateFooterStatus(data);
+            showUpdateIndicator();
+        } catch (error) {
+            console.error('Auto-refresh failed:', error);
+        }
+    }, SYSTEM_STATUS_REFRESH_INTERVAL);
+    
+    console.log(`Auto-refresh started - refreshing every ${SYSTEM_STATUS_REFRESH_INTERVAL / 1000} seconds`);
+}
+
+function stopAutoRefresh() {
+    if (systemStatusRefreshInterval) {
+        clearInterval(systemStatusRefreshInterval);
+        systemStatusRefreshInterval = null;
+        console.log('Auto-refresh stopped');
+    }
+}
+
+// Initialize auto-refresh when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Start auto-refresh after a short delay
+    setTimeout(() => {
+        startAutoRefresh();
+    }, 5000); // Start after 5 seconds
+});
 
 // Task management functions
 async function refreshTasks() {

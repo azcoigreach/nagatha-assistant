@@ -567,6 +567,17 @@ async def send_message(
                     try:
                         logger.info(f"LLM requested tool call: '{tool_name}' with args: {tool_args}")
                         tool_result = await call_tool_or_command(tool_name, tool_args)
+                        
+                        # Convert tool result to string if it's not already
+                        if not isinstance(tool_result, str):
+                            tool_result = str(tool_result)
+                        
+                        # Limit tool result size to prevent context length issues
+                        max_tool_result_length = 8000  # characters
+                        if len(tool_result) > max_tool_result_length:
+                            tool_result = tool_result[:max_tool_result_length] + f"\n\n[Content truncated due to length - showing first {max_tool_result_length} characters]"
+                            logger.info(f"Tool result truncated from {len(tool_result)} to {max_tool_result_length} characters")
+                        
                         assistant_msg += f"I used the {tool_name} tool and here's what I found:\n\n{tool_result}\n\n"
                     except Exception as e:
                         logger.error(f"Error in tool call '{tool_name}': {e}")
@@ -612,7 +623,10 @@ async def send_message(
             
         except Exception as e:
             logger.exception("Error in conversation processing")
-            assistant_msg = f"I encountered an error while processing your request: {e}"
+            if "context_length_exceeded" in str(e) or "194424 tokens" in str(e):
+                assistant_msg = "I found some great information online, but the search results were quite extensive and exceeded my processing limits. Let me provide you with a summary of what I found, or you can try a more specific search query to get more focused results!"
+            else:
+                assistant_msg = f"I encountered an error while processing your request: {e}"
 
     # Save assistant reply
     async with SessionLocal() as session:

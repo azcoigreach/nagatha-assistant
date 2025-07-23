@@ -11,7 +11,8 @@ from django.contrib.auth.decorators import login_required
 from django.views.generic import TemplateView
 from django.conf import settings
 from .models import Session, Message, SystemStatus, Task, UserPreferences
-from .tasks import process_user_message, test_simple_message_task, test_minimal_orm
+from .tasks import process_user_message, test_simple_message_task, test_minimal_orm, refresh_system_status
+from .nagatha_celery_integration import process_message_with_nagatha
 
 logger = logging.getLogger(__name__)
 
@@ -148,18 +149,51 @@ def send_message(request):
         )
         logger.info(f"Created user message: {user_message.id}")
         
-        # Use proper process_user_message task instead of minimal ORM test
-        logger.info("Starting process_user_message task")
-        task = process_user_message.delay(str(session.id), message_content)
-        logger.info(f"Started process_user_message task: {task.id}")
-        
-        logger.info("Sending success response")
-        return JsonResponse({
-            'success': True,
-            'session_id': str(session.id),
-            'message_id': str(user_message.id),
-            'task_id': task.id
-        })
+        # Process message synchronously for now
+        logger.info("Processing message synchronously")
+        try:
+            import asyncio
+            from .nagatha_real_adapter import NagathaRealAdapter
+            
+            # Create adapter and process message
+            adapter = NagathaRealAdapter()
+            
+            # Use the session's nagatha_session_id if it exists, otherwise pass None to create new
+            nagatha_session_id = getattr(session, 'nagatha_session_id', None)
+            response, new_nagatha_session_id = asyncio.run(adapter.send_message(nagatha_session_id, message_content))
+            
+            # Update session with Nagatha session ID if this was a new session
+            if not nagatha_session_id:
+                session.nagatha_session_id = new_nagatha_session_id
+                session.save()
+                logger.info(f"Updated session with Nagatha session ID: {new_nagatha_session_id}")
+            
+            # Create assistant message
+            assistant_message = Message.objects.create(
+                session=session,
+                content=response,
+                message_type='assistant'
+            )
+            
+            logger.info(f"Created assistant message: {assistant_message.id}")
+            
+            return JsonResponse({
+                'success': True,
+                'session_id': str(session.id),
+                'message_id': str(user_message.id),
+                'assistant_message_id': str(assistant_message.id),
+                'response': response
+            })
+            
+        except Exception as e:
+            logger.error(f"Error processing message: {e}")
+            # Return error response but still save the user message
+            return JsonResponse({
+                'success': False,
+                'session_id': str(session.id),
+                'message_id': str(user_message.id),
+                'error': str(e)
+            })
         
     except json.JSONDecodeError:
         logger.error("JSON decode error")
@@ -169,6 +203,73 @@ def send_message(request):
         logger.error(f"Exception type: {type(e)}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def send_message_nagatha_core(request):
+    """Send a message using Nagatha's core agent via Celery."""
+    try:
+        logger.info("Starting send_message_nagatha_core view")
+        data = json.loads(request.body)
+        message_content = data.get('message', '').strip()
+        session_id = data.get('session_id')
+        
+        if not message_content:
+            return JsonResponse({'error': 'Message content is required'}, status=400)
+        
+        logger.info(f"Processing message with Nagatha core: {message_content[:50]}...")
+        
+        # Get or create session
+        if session_id:
+            try:
+                logger.info(f"Getting existing session: {session_id}")
+                session = Session.objects.get(id=session_id)
+                if request.user.is_authenticated and session.user != request.user:
+                    return JsonResponse({'error': 'Access denied'}, status=403)
+            except Session.DoesNotExist:
+                return JsonResponse({'error': 'Session not found'}, status=404)
+        else:
+            # Create new session
+            logger.info("Creating new session")
+            session = Session.objects.create(
+                user=request.user if request.user.is_authenticated else None,
+                title=message_content[:50] + ('...' if len(message_content) > 50 else '')
+            )
+            logger.info(f"Created session: {session.id}")
+        
+        # Save user message
+        logger.info("Creating user message")
+        user_message = Message.objects.create(
+            session=session,
+            content=message_content,
+            message_type='user'
+        )
+        
+        # Process message with Nagatha core via Celery
+        logger.info("Starting Nagatha core Celery task")
+        result = process_message_with_nagatha.delay(
+            session.id,
+            message_content,
+            request.user.id if request.user.is_authenticated else None
+        )
+        
+        logger.info(f"Started Nagatha core Celery task: {result.id}")
+        
+        return JsonResponse({
+            'success': True,
+            'task_id': result.id,
+            'session_id': session.id,
+            'user_message_id': user_message.id,
+            'message': 'Message processing started with Nagatha core',
+            'integration_type': 'nagatha_core'
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        logger.error(f"Error in send_message_nagatha_core: {e}")
         return JsonResponse({'error': 'Internal server error'}, status=500)
 
 
@@ -208,8 +309,39 @@ def get_session_messages(request, session_id):
 def system_status(request):
     """Get current system status."""
     try:
-        # Trigger status refresh in background
-        # refresh_system_status.delay() # Temporarily removed
+        # Check if refresh is requested
+        refresh = request.GET.get('refresh', 'false').lower() == 'true'
+        
+        if refresh:
+            # Trigger status refresh synchronously for now
+            try:
+                import asyncio
+                from .nagatha_real_adapter import NagathaRealAdapter
+                
+                # Create new status directly
+                adapter = NagathaRealAdapter()
+                status_info = asyncio.run(adapter.get_system_status())
+                
+                # Create new SystemStatus record
+                SystemStatus.objects.create(
+                    mcp_servers_connected=status_info['mcp_servers_connected'],
+                    total_tools_available=status_info['total_tools_available'],
+                    active_sessions=status_info['active_sessions'],
+                    system_health=status_info['system_health'],
+                    cpu_usage=status_info['cpu_usage'],
+                    memory_usage=status_info['memory_usage'],
+                    disk_usage=status_info['disk_usage'],
+                    additional_metrics=status_info['additional_metrics']
+                )
+                
+                # Clean up old status records (keep last 10)
+                old_statuses = SystemStatus.objects.all()[10:]
+                for status in old_statuses:
+                    status.delete()
+                
+                logger.info("System status refreshed synchronously")
+            except Exception as e:
+                logger.error(f"Failed to refresh system status: {e}")
         
         # Get latest status
         latest_status = SystemStatus.objects.first()

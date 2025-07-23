@@ -83,8 +83,22 @@ async function handleMessageSubmit(e) {
             }
         }
         
-        // Poll for the assistant's response
-        pollForTaskCompletion(response.task_id);
+        // Handle immediate response (no longer using tasks)
+        if (response.success && response.assistant_message_id) {
+            // Add assistant message to UI immediately
+            addMessageToUI({
+                content: response.response,
+                message_type: 'assistant',
+                created_at: new Date().toISOString()
+            });
+        } else if (!response.success) {
+            // Handle error response
+            addMessageToUI({
+                content: `Error: ${response.error || 'Unknown error'}`,
+                message_type: 'error',
+                created_at: new Date().toISOString()
+            });
+        }
         
     } catch (error) {
         console.error('Failed to send message:', error);
@@ -146,55 +160,7 @@ function addMessageToUI(message) {
     scrollToBottom();
 }
 
-// Poll for task completion
-async function pollForTaskCompletion(taskId, maxAttempts = 30) {
-    let attempts = 0;
-    
-    const poll = async () => {
-        try {
-            attempts++;
-            const taskData = await apiCall(`/api/task/${taskId}/status/`);
-            
-            if (taskData.status === 'completed') {
-                // Task completed, load session messages to get the response
-                if (currentSessionId) {
-                    await loadSessionMessages(currentSessionId);
-                }
-                return;
-            } else if (taskData.status === 'failed') {
-                throw new Error(taskData.error_message || 'Task failed');
-            } else if (attempts >= maxAttempts) {
-                throw new Error('Timeout waiting for response');
-            } else {
-                // Continue polling
-                setTimeout(poll, 2000); // Poll every 2 seconds
-            }
-            
-        } catch (error) {
-            console.error('Task polling error:', error);
-            
-            // If the task is not found (404), it means the Task record wasn't created
-            // This is expected since we removed Task record creation to fix the greenlet issue
-            // In this case, just load the session messages directly
-            if (error.message.includes('Task not found') || error.message.includes('404')) {
-                console.log('Task record not found, loading session messages directly');
-                if (currentSessionId) {
-                    await loadSessionMessages(currentSessionId);
-                }
-                return;
-            }
-            
-            // For other errors, show the error message
-            addMessageToUI({
-                content: `Error: ${error.message}`,
-                message_type: 'error',
-                created_at: new Date().toISOString()
-            });
-        }
-    };
-    
-    setTimeout(poll, 1000); // Start polling after 1 second
-}
+// Note: Polling function removed since we now use synchronous responses
 
 // Load session messages
 async function loadSessionMessages(sessionId) {

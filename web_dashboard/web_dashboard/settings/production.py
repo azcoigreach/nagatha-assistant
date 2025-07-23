@@ -30,6 +30,45 @@ INSTALLED_APPS += [
 # Celery Beat Configuration
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
+# Celery Beat Scheduled Tasks for Nagatha Integration
+CELERY_BEAT_SCHEDULE = {
+    # MCP Server Health Checks - Every 5 minutes
+    'check-mcp-servers-health': {
+        'task': 'dashboard.nagatha_celery_integration.check_mcp_servers_health',
+        'schedule': 300.0,  # 5 minutes
+    },
+    
+    # Memory Cleanup and Maintenance - Every hour
+    'cleanup-memory-and-maintenance': {
+        'task': 'dashboard.nagatha_celery_integration.cleanup_memory_and_maintenance',
+        'schedule': 3600.0,  # 1 hour
+    },
+    
+    # Usage Metrics Tracking - Every 15 minutes
+    'track-usage-metrics': {
+        'task': 'dashboard.nagatha_celery_integration.track_usage_metrics',
+        'schedule': 900.0,  # 15 minutes
+    },
+    
+    # Scheduled Tasks and Reminders - Every minute
+    'process-scheduled-tasks': {
+        'task': 'dashboard.nagatha_celery_integration.process_scheduled_tasks',
+        'schedule': 60.0,  # 1 minute
+    },
+    
+    # System Status Refresh - Every 2 minutes
+    'refresh-system-status': {
+        'task': 'dashboard.refresh_system_status',
+        'schedule': 120.0,  # 2 minutes
+    },
+    
+    # Data Cleanup - Every 6 hours
+    'cleanup-old-data': {
+        'task': 'dashboard.cleanup_old_data',
+        'schedule': 21600.0,  # 6 hours
+    },
+}
+
 # Cache (Redis) - Only for production
 CACHES = {
     'default': {

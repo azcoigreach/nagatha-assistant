@@ -1,0 +1,21 @@
+{
+  "_metadata": {
+    "reset_timestamp": null,
+    "reset_count": 0
+  },
+  "gpt-4o-mini": {
+    "prompt_tokens": 480551,
+    "completion_tokens": 7018,
+    "cost_usd": 0.07629345000000001,
+    "requests": 46,
+    "last_used": "2025-07-23T22:05:07.411647",
+    "daily_usage": {
+      "2025-07-23": {
+        "prompt_tokens": 480551,
+        "completion_tokens": 7018,
+        "cost_usd": 0.07629345000000001,
+        "requests": 46
+      }
+    }
+  }
+}
