@@ -1,22 +1,248 @@
-/* Custom styles for Nagatha Dashboard */
+/* Custom styles for Nagatha Dashboard - Dark Theme */
 
 :root {
-    --nagatha-primary: #0d6efd;
-    --nagatha-secondary: #6c757d;
-    --nagatha-success: #198754;
-    --nagatha-info: #0dcaf0;
-    --nagatha-warning: #ffc107;
-    --nagatha-danger: #dc3545;
-    --nagatha-light: #f8f9fa;
-    --nagatha-dark: #212529;
+    /* Dark theme color palette */
+    --nagatha-primary: #3b82f6;
+    --nagatha-secondary: #64748b;
+    --nagatha-success: #10b981;
+    --nagatha-info: #06b6d4;
+    --nagatha-warning: #f59e0b;
+    --nagatha-danger: #ef4444;
+    
+    /* Dark theme backgrounds */
+    --nagatha-bg-primary: #0f172a;
+    --nagatha-bg-secondary: #1e293b;
+    --nagatha-bg-tertiary: #334155;
+    --nagatha-bg-card: #1e293b;
+    --nagatha-bg-sidebar: #1e293b;
+    --nagatha-bg-navbar: #0f172a;
+    
+    /* Dark theme text colors */
+    --nagatha-text-primary: #f8fafc;
+    --nagatha-text-secondary: #cbd5e1;
+    --nagatha-text-muted: #94a3b8;
+    --nagatha-text-inverse: #0f172a;
+    
+    /* Dark theme borders */
+    --nagatha-border: #334155;
+    --nagatha-border-light: #475569;
+    
+    /* Sidebar */
     --sidebar-width: 280px;
 }
 
+/* Light theme variables */
+[data-bs-theme="light"] {
+    /* Light theme backgrounds - darker for better contrast */
+    --nagatha-bg-primary: #f8fafc;
+    --nagatha-bg-secondary: #e2e8f0;
+    --nagatha-bg-tertiary: #cbd5e1;
+    --nagatha-bg-card: #ffffff;
+    --nagatha-bg-sidebar: #e2e8f0;
+    --nagatha-bg-navbar: #1e293b;
+    
+    /* Light theme text colors - darker for better contrast */
+    --nagatha-text-primary: #0f172a;
+    --nagatha-text-secondary: #1e293b;
+    --nagatha-text-muted: #475569;
+    --nagatha-text-inverse: #ffffff;
+    
+    /* Light theme borders - darker for better definition */
+    --nagatha-border: #94a3b8;
+    --nagatha-border-light: #64748b;
+}
+
+/* Light theme specific overrides for better contrast */
+[data-bs-theme="light"] {
+    /* Navigation bar - dark background with light text for contrast */
+    .navbar {
+        background-color: var(--nagatha-bg-navbar) !important;
+        border-bottom: 1px solid var(--nagatha-border);
+    }
+    
+    .navbar-brand,
+    .navbar-nav .nav-link {
+        color: var(--nagatha-text-inverse) !important;
+    }
+    
+    .navbar-nav .nav-link:hover {
+        color: #cbd5e1 !important;
+    }
+    
+    .navbar-nav .nav-link.active {
+        color: #ffffff !important;
+        background-color: rgba(255, 255, 255, 0.1);
+    }
+    
+    /* Sidebar - better contrast */
+    .sidebar {
+        background-color: var(--nagatha-bg-sidebar);
+        border-right: 1px solid var(--nagatha-border);
+    }
+    
+    .sidebar-link {
+        color: var(--nagatha-text-primary);
+        border: 1px solid transparent;
+    }
+    
+    .sidebar-link:hover {
+        background-color: var(--nagatha-bg-tertiary);
+        color: var(--nagatha-text-primary);
+        border-color: var(--nagatha-border);
+    }
+    
+    .sidebar-link.active {
+        background-color: var(--nagatha-primary);
+        color: var(--nagatha-text-inverse);
+        border-color: var(--nagatha-primary);
+    }
+    
+    /* Sidebar navigation items */
+    .sidebar-nav .nav-link {
+        color: var(--nagatha-text-primary);
+        border: 1px solid transparent;
+        border-radius: 0.375rem;
+        margin: 0.125rem 0;
+        padding: 0.5rem 0.75rem;
+    }
+    
+    .sidebar-nav .nav-link:hover {
+        background-color: var(--nagatha-bg-tertiary);
+        color: var(--nagatha-text-primary);
+        border-color: var(--nagatha-border);
+    }
+    
+    .sidebar-nav .nav-link.active {
+        background-color: var(--nagatha-primary);
+        color: var(--nagatha-text-inverse);
+        border-color: var(--nagatha-primary);
+    }
+    
+    /* Sidebar buttons */
+    .sidebar .btn {
+        color: var(--nagatha-text-primary);
+        border: 1px solid var(--nagatha-border);
+        background-color: var(--nagatha-bg-card);
+    }
+    
+    .sidebar .btn:hover {
+        background-color: var(--nagatha-bg-tertiary);
+        color: var(--nagatha-text-primary);
+        border-color: var(--nagatha-border-light);
+    }
+    
+    .sidebar .btn-primary {
+        background-color: var(--nagatha-primary);
+        color: var(--nagatha-text-inverse);
+        border-color: var(--nagatha-primary);
+    }
+    
+    .sidebar .btn-primary:hover {
+        background-color: #2563eb;
+        color: var(--nagatha-text-inverse);
+        border-color: #2563eb;
+    }
+    
+    /* Cards and content areas */
+    .card {
+        background-color: var(--nagatha-bg-card);
+        border: 1px solid var(--nagatha-border);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    
+    .card-header {
+        background-color: var(--nagatha-bg-secondary);
+        border-bottom: 1px solid var(--nagatha-border);
+        color: var(--nagatha-text-primary);
+    }
+    
+    /* Buttons - better contrast */
+    .btn-outline-primary {
+        color: var(--nagatha-primary);
+        border-color: var(--nagatha-primary);
+    }
+    
+    .btn-outline-primary:hover {
+        background-color: var(--nagatha-primary);
+        color: var(--nagatha-text-inverse);
+    }
+    
+    .btn-outline-secondary {
+        color: var(--nagatha-text-primary);
+        border-color: var(--nagatha-border);
+    }
+    
+    .btn-outline-secondary:hover {
+        background-color: var(--nagatha-bg-tertiary);
+        color: var(--nagatha-text-primary);
+        border-color: var(--nagatha-border-light);
+    }
+    
+    /* Form controls */
+    .form-control {
+        background-color: var(--nagatha-bg-card);
+        border: 1px solid var(--nagatha-border);
+        color: var(--nagatha-text-primary);
+    }
+    
+    .form-control:focus {
+        background-color: var(--nagatha-bg-card);
+        border-color: var(--nagatha-primary);
+        color: var(--nagatha-text-primary);
+        box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+    }
+    
+    /* Footer */
+    footer {
+        background-color: var(--nagatha-bg-secondary);
+        border-top: 1px solid var(--nagatha-border);
+        color: var(--nagatha-text-primary);
+    }
+    
+    /* Progress bars and status indicators */
+    .progress {
+        background-color: var(--nagatha-bg-tertiary);
+    }
+    
+    .badge {
+        color: var(--nagatha-text-inverse);
+    }
+    
+    /* Modal and dropdown improvements */
+    .modal-content {
+        background-color: var(--nagatha-bg-card);
+        border: 1px solid var(--nagatha-border);
+    }
+    
+    .modal-header {
+        background-color: var(--nagatha-bg-secondary);
+        border-bottom: 1px solid var(--nagatha-border);
+        color: var(--nagatha-text-primary);
+    }
+    
+    .dropdown-menu {
+        background-color: var(--nagatha-bg-card);
+        border: 1px solid var(--nagatha-border);
+    }
+    
+    .dropdown-item {
+        color: var(--nagatha-text-primary);
+    }
+    
+    .dropdown-item:hover {
+        background-color: var(--nagatha-bg-secondary);
+        color: var(--nagatha-text-primary);
+    }
+}
+
+/* Global theme styles */
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
+    background-color: var(--nagatha-bg-primary);
+    color: var(--nagatha-text-primary);
 }
 
 /* Layout */
@@ -27,6 +253,7 @@ body {
 .main-content {
     margin-left: 0;
     transition: margin-left 0.3s ease;
+    background-color: var(--nagatha-bg-primary);
 }
 
 /* Sidebar */
@@ -39,6 +266,8 @@ body {
     z-index: 1000;
     transition: left 0.3s ease;
     overflow-y: auto;
+    background-color: var(--nagatha-bg-sidebar);
+    border-right: 1px solid var(--nagatha-border);
 }
 
 .sidebar.active {
@@ -50,7 +279,8 @@ body {
 }
 
 .sidebar-header {
-    background-color: rgba(13, 110, 253, 0.1);
+    background-color: rgba(59, 130, 246, 0.1);
+    border-bottom: 1px solid var(--nagatha-border);
 }
 
 .sidebar-nav {
@@ -61,21 +291,22 @@ body {
     display: flex;
     align-items: center;
     padding: 0.75rem 1rem;
-    color: var(--nagatha-dark);
+    color: var(--nagatha-text-secondary);
     text-decoration: none;
     border-radius: 0.375rem;
     transition: all 0.15s ease-in-out;
+    margin: 0.25rem 0.5rem;
 }
 
 .sidebar-link:hover {
-    background-color: rgba(13, 110, 253, 0.1);
+    background-color: rgba(59, 130, 246, 0.1);
     color: var(--nagatha-primary);
     text-decoration: none;
 }
 
 .sidebar-link.active {
     background-color: var(--nagatha-primary);
-    color: white;
+    color: var(--nagatha-text-inverse);
 }
 
 .sidebar-link i {
@@ -99,34 +330,63 @@ body {
 }
 
 /* Navigation */
+.navbar {
+    background-color: var(--nagatha-bg-navbar) !important;
+    border-bottom: 1px solid var(--nagatha-border);
+}
+
 .navbar-brand {
     font-weight: 600;
+    color: var(--nagatha-text-primary) !important;
 }
 
 .navbar-brand img {
     filter: brightness(0) invert(1); /* Make SVG white */
 }
 
+.navbar-nav .nav-link {
+    color: var(--nagatha-text-secondary) !important;
+}
+
+.navbar-nav .nav-link:hover,
+.navbar-nav .nav-link.active {
+    color: var(--nagatha-primary) !important;
+}
+
+.navbar-toggler {
+    border-color: var(--nagatha-border);
+}
+
+.navbar-toggler:focus {
+    box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+}
+
 /* Cards */
 .card {
-    border: none;
-    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    border: 1px solid var(--nagatha-border);
+    background-color: var(--nagatha-bg-card);
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.2);
     transition: box-shadow 0.15s ease-in-out;
 }
 
 .card:hover {
-    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.3);
 }
 
 .card-header {
-    background-color: var(--nagatha-light);
-    border-bottom: 1px solid rgba(0, 0, 0, 0.125);
+    background-color: var(--nagatha-bg-tertiary);
+    border-bottom: 1px solid var(--nagatha-border);
     padding: 0.75rem 1rem;
 }
 
 .card-title {
-    color: var(--nagatha-dark);
+    color: var(--nagatha-text-primary);
     font-weight: 600;
+}
+
+.card-body {
+    background-color: var(--nagatha-bg-card);
+    color: var(--nagatha-text-primary);
 }
 
 /* Messages */
@@ -144,13 +404,61 @@ body {
     white-space: pre-wrap;
 }
 
+/* Chat messages */
+#messages-container {
+    background-color: var(--nagatha-bg-secondary) !important;
+    border-color: var(--nagatha-border) !important;
+}
+
+/* Override Bootstrap background classes for chat messages */
+.message .bg-white,
+.message .bg-light,
+.message .border {
+    background-color: var(--nagatha-bg-tertiary) !important;
+    color: var(--nagatha-text-primary) !important;
+    border-color: var(--nagatha-border) !important;
+}
+
+.message .bg-primary {
+    background-color: var(--nagatha-primary) !important;
+    color: var(--nagatha-text-inverse) !important;
+}
+
+.message .bg-info {
+    background-color: var(--nagatha-info) !important;
+    color: var(--nagatha-text-inverse) !important;
+}
+
+.message .bg-danger {
+    background-color: var(--nagatha-danger) !important;
+    color: var(--nagatha-text-inverse) !important;
+}
+
+/* Additional specificity for message content */
+.message .d-inline-block.max-width-75.p-3.rounded.bg-white.border,
+.message .d-inline-block.max-width-75.p-3.rounded.bg-light.border {
+    background-color: var(--nagatha-bg-tertiary) !important;
+    color: var(--nagatha-text-primary) !important;
+    border-color: var(--nagatha-border) !important;
+}
+
+.message .d-inline-block.max-width-75.p-3.rounded.bg-primary {
+    background-color: var(--nagatha-primary) !important;
+    color: var(--nagatha-text-inverse) !important;
+}
+
+.message .d-inline-block.max-width-75.p-3.rounded.bg-danger {
+    background-color: var(--nagatha-danger) !important;
+    color: var(--nagatha-text-inverse) !important;
+}
+
 /* System Status */
 .system-status-metric {
     text-align: center;
     padding: 1rem;
     border-radius: 0.375rem;
-    background-color: var(--nagatha-light);
-    border: 1px solid rgba(0, 0, 0, 0.125);
+    background-color: var(--nagatha-bg-tertiary);
+    border: 1px solid var(--nagatha-border);
 }
 
 .system-status-metric .metric-value {
@@ -161,13 +469,13 @@ body {
 
 .system-status-metric .metric-label {
     font-size: 0.875rem;
-    color: var(--nagatha-secondary);
+    color: var(--nagatha-text-muted);
     margin-top: 0.25rem;
 }
 
 /* Progress bars */
 .progress {
-    background-color: rgba(0, 0, 0, 0.1);
+    background-color: var(--nagatha-bg-tertiary);
 }
 
 .progress-bar {
@@ -188,8 +496,37 @@ body {
 }
 
 .btn-primary:hover {
-    background-color: #0b5ed7;
-    border-color: #0a58ca;
+    background-color: #2563eb;
+    border-color: #1d4ed8;
+}
+
+.btn-outline-secondary {
+    color: var(--nagatha-text-secondary);
+    border-color: var(--nagatha-border);
+}
+
+.btn-outline-secondary:hover {
+    background-color: var(--nagatha-bg-tertiary);
+    color: var(--nagatha-text-primary);
+    border-color: var(--nagatha-border-light);
+}
+
+/* Form controls */
+.form-control {
+    background-color: var(--nagatha-bg-secondary);
+    border-color: var(--nagatha-border);
+    color: var(--nagatha-text-primary);
+}
+
+.form-control:focus {
+    background-color: var(--nagatha-bg-secondary);
+    border-color: var(--nagatha-primary);
+    color: var(--nagatha-text-primary);
+    box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+}
+
+.form-control::placeholder {
+    color: var(--nagatha-text-muted);
 }
 
 /* Loading states */
@@ -233,7 +570,7 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-    background: var(--nagatha-light);
+    background: var(--nagatha-bg-secondary);
 }
 
 ::-webkit-scrollbar-thumb {
@@ -242,7 +579,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #5a6268;
+    background: #475569;
 }
 
 /* Status badges */
@@ -251,15 +588,38 @@ body {
     font-weight: 600;
 }
 
+.badge.bg-success {
+    background-color: var(--nagatha-success) !important;
+}
+
+.badge.bg-warning {
+    background-color: var(--nagatha-warning) !important;
+    color: var(--nagatha-text-inverse);
+}
+
+.badge.bg-danger {
+    background-color: var(--nagatha-danger) !important;
+}
+
+.badge.bg-secondary {
+    background-color: var(--nagatha-secondary) !important;
+}
+
 /* Task list */
 .list-group-item {
+    background-color: var(--nagatha-bg-card);
     border: none;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.125);
+    border-bottom: 1px solid var(--nagatha-border);
     padding: 1rem 0;
+    color: var(--nagatha-text-primary);
 }
 
 .list-group-item:last-child {
     border-bottom: none;
+}
+
+.list-group-item:hover {
+    background-color: var(--nagatha-bg-tertiary);
 }
 
 /* Animation for new content */
@@ -281,16 +641,15 @@ body {
     margin-top: 0.25rem;
 }
 
-/* Focus states */
-.form-control:focus {
-    border-color: var(--nagatha-primary);
-    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+/* Modal enhancements */
+.modal-content {
+    background-color: var(--nagatha-bg-card);
+    border-color: var(--nagatha-border);
 }
 
-/* Modal enhancements */
 .modal-header {
     background-color: var(--nagatha-primary);
-    color: white;
+    color: var(--nagatha-text-inverse);
     border-bottom: none;
 }
 
@@ -298,15 +657,121 @@ body {
     filter: brightness(0) invert(1);
 }
 
+.modal-body {
+    background-color: var(--nagatha-bg-card);
+    color: var(--nagatha-text-primary);
+}
+
+.modal-footer {
+    background-color: var(--nagatha-bg-card);
+    border-top: 1px solid var(--nagatha-border);
+}
+
 /* Footer */
 footer {
     margin-top: auto;
+    background-color: var(--nagatha-bg-navbar);
+    border-top: 1px solid var(--nagatha-border);
+    color: var(--nagatha-text-secondary);
 }
 
-/* Dark mode support (if needed later) */
-@media (prefers-color-scheme: dark) {
-    :root {
-        --nagatha-light: #2d3748;
-        --nagatha-dark: #f7fafc;
-    }
+/* Text utilities */
+.text-muted {
+    color: var(--nagatha-text-muted) !important;
+}
+
+.text-primary {
+    color: var(--nagatha-primary) !important;
+}
+
+.text-info {
+    color: var(--nagatha-info) !important;
+}
+
+.text-success {
+    color: var(--nagatha-success) !important;
+}
+
+.text-warning {
+    color: var(--nagatha-warning) !important;
+}
+
+.text-danger {
+    color: var(--nagatha-danger) !important;
+}
+
+/* Background utilities */
+.bg-light {
+    background-color: var(--nagatha-bg-secondary) !important;
+}
+
+.bg-white {
+    background-color: var(--nagatha-bg-card) !important;
+}
+
+/* Border utilities */
+.border {
+    border-color: var(--nagatha-border) !important;
+}
+
+.border-end {
+    border-right-color: var(--nagatha-border) !important;
+}
+
+.border-top {
+    border-top-color: var(--nagatha-border) !important;
+}
+
+.border-bottom {
+    border-bottom-color: var(--nagatha-border) !important;
+}
+
+/* Alert styles */
+.alert {
+    background-color: var(--nagatha-bg-tertiary);
+    border-color: var(--nagatha-border);
+    color: var(--nagatha-text-primary);
+}
+
+.alert-success {
+    background-color: rgba(16, 185, 129, 0.1);
+    border-color: var(--nagatha-success);
+    color: var(--nagatha-success);
+}
+
+.alert-danger {
+    background-color: rgba(239, 68, 68, 0.1);
+    border-color: var(--nagatha-danger);
+    color: var(--nagatha-danger);
+}
+
+.alert-warning {
+    background-color: rgba(245, 158, 11, 0.1);
+    border-color: var(--nagatha-warning);
+    color: var(--nagatha-warning);
+}
+
+.alert-info {
+    background-color: rgba(6, 182, 212, 0.1);
+    border-color: var(--nagatha-info);
+    color: var(--nagatha-info);
+}
+
+/* Dropdown styles */
+.dropdown-menu {
+    background-color: var(--nagatha-bg-card);
+    border-color: var(--nagatha-border);
+}
+
+.dropdown-item {
+    color: var(--nagatha-text-primary);
+}
+
+.dropdown-item:hover {
+    background-color: var(--nagatha-bg-tertiary);
+    color: var(--nagatha-text-primary);
+}
+
+.dropdown-divider {
+    border-color: var(--nagatha-border);
 }

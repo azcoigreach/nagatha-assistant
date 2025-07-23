@@ -9,85 +9,303 @@ from celery import shared_task
 from django.utils import timezone
 from django.conf import settings
 from .models import Session, Message, SystemStatus, Task
-from .nagatha_adapter import NagathaAdapter
+from .nagatha_redis_adapter import NagathaRedisAdapter
 import logging
 
 logger = logging.getLogger(__name__)
 
 
+def get_simple_response(message: str) -> str:
+    """Provide a simple response when Nagatha is not available."""
+    message_lower = message.lower()
+    
+    if any(word in message_lower for word in ['hello', 'hi', 'hey']):
+        return "Hello! I'm Nagatha Assistant. I'm currently experiencing some technical difficulties, but I'm here to help with basic questions."
+    elif any(word in message_lower for word in ['help', 'what can you do']):
+        return "I'm Nagatha Assistant, an AI assistant designed to help with various tasks. I can help with conversations, answer questions, and assist with different tools. I'm currently in a limited mode due to technical issues."
+    elif any(word in message_lower for word in ['status', 'health', 'working']):
+        return "I'm currently experiencing some technical difficulties with my database connection. My core functionality is temporarily limited, but I'm still here to help with basic questions."
+    else:
+        return "I'm sorry, I'm currently experiencing technical difficulties with my database connection. I can still help with basic questions, but my full functionality is temporarily unavailable. Please try again later or contact support if the issue persists."
+
+
 @shared_task(bind=True)
-def process_user_message(self, session_id, message_content, user_id=None):
-    """Process a user message with Nagatha Assistant."""
+def test_minimal_orm(self):
+    """Minimal test task that only does basic Django ORM operations."""
+    task_record = None
     try:
-        # Update task status
-        task_record = Task.objects.filter(celery_task_id=self.request.id).first()
+        logger.info("Starting test_minimal_orm task")
+        
+        # Create a Task record to track this task
+        task_record = Task.objects.create(
+            celery_task_id=self.request.id,
+            task_name='test_minimal_orm',
+            description='Minimal ORM test task',
+            status='running',
+            started_at=timezone.now()
+        )
+        logger.info(f"Created task record: {task_record.id}")
+        
+        # Test 1: Simple count query
+        session_count = Session.objects.count()
+        logger.info(f"Session count: {session_count}")
+        
+        # Test 2: Simple get query
+        if session_count > 0:
+            first_session = Session.objects.first()
+            logger.info(f"First session ID: {first_session.id}")
+        
+        # Test 3: Simple create query (only if we have a session)
+        if session_count > 0:
+            test_message = Message.objects.create(
+                session=first_session,
+                content="Test message from minimal ORM task",
+                message_type='assistant'
+            )
+            logger.info(f"Created test message: {test_message.id}")
+            
+            # Test 4: Simple delete query
+            test_message.delete()
+            logger.info("Deleted test message")
+        else:
+            logger.info("No sessions found, skipping message creation test")
+        
+        # Update task record to completed
+        task_record.status = 'completed'
+        task_record.progress = 100
+        task_record.result = {'success': True, 'message': 'Minimal ORM test passed'}
+        task_record.completed_at = timezone.now()
+        task_record.save()
+        
+        logger.info("test_minimal_orm task completed successfully")
+        return {'success': True, 'message': 'Minimal ORM test passed'}
+        
+    except Exception as e:
+        logger.error(f"Error in test_minimal_orm: {e}")
+        logger.error(f"Exception type: {type(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Update task record to failed
         if task_record:
-            task_record.status = 'running'
-            task_record.started_at = timezone.now()
+            task_record.status = 'failed'
+            task_record.error_message = str(e)
+            task_record.completed_at = timezone.now()
             task_record.save()
         
-        # Get session
+        return {'success': False, 'error': str(e)}
+
+
+@shared_task(bind=True)
+def test_simple_message_task(self, session_id, content):
+    """Minimal test task that only uses Django ORM - no async, no Nagatha core."""
+    task_record = None
+    try:
+        logger.info(f"Starting test_simple_message_task for session {session_id}")
+        
+        # Create a Task record to track this task
+        task_record = Task.objects.create(
+            celery_task_id=self.request.id,
+            task_name='test_simple_message_task',
+            description=f'Simple message task for session {session_id}',
+            status='running',
+            started_at=timezone.now()
+        )
+        logger.info(f"Created task record: {task_record.id}")
+        
         session = Session.objects.get(id=session_id)
+        msg = Message.objects.create(
+            session=session,
+            content=content,
+            message_type='assistant'
+        )
+        logger.info(f"Successfully created message {msg.id} in test task")
         
-        # Initialize Nagatha adapter
-        adapter = NagathaAdapter()
+        # Update task record to completed
+        task_record.status = 'completed'
+        task_record.progress = 100
+        task_record.result = {'success': True, 'message_id': str(msg.id)}
+        task_record.completed_at = timezone.now()
+        task_record.save()
         
-        # Send message to Nagatha
-        # Create a new event loop for this task to avoid conflicts with Celery
+        return {'success': True, 'message_id': str(msg.id)}
+    except Exception as e:
+        logger.error(f"Error in test_simple_message_task: {e}")
+        
+        # Update task record to failed
+        if task_record:
+            task_record.status = 'failed'
+            task_record.error_message = str(e)
+            task_record.completed_at = timezone.now()
+            task_record.save()
+        
+        return {'success': False, 'error': str(e)}
+
+
+@shared_task(bind=True)
+def test_django_orm(self):
+    """Test basic Django ORM operations in Celery context."""
+    task_record = None
+    try:
+        # Create a Task record to track this task
+        task_record = Task.objects.create(
+            celery_task_id=self.request.id,
+            task_name='test_django_orm',
+            description='Test Django ORM operations',
+            status='running',
+            started_at=timezone.now()
+        )
+        logger.info(f"Created task record: {task_record.id}")
+        
+        # Test basic database operations
+        from django.db import connection
+        
+        # Test a simple query
+        session_count = Session.objects.count()
+        logger.info(f"Session count: {session_count}")
+        
+        # Test creating a simple record
+        test_status = SystemStatus.objects.create(
+            mcp_servers_connected=0,
+            total_tools_available=0,
+            active_sessions=0,
+            system_health='test',
+            additional_metrics={'test': True}
+        )
+        logger.info(f"Created test status: {test_status.id}")
+        
+        # Clean up
+        test_status.delete()
+        
+        # Update task record to completed
+        task_record.status = 'completed'
+        task_record.progress = 100
+        task_record.result = {'success': True, 'message': 'Django ORM test passed'}
+        task_record.completed_at = timezone.now()
+        task_record.save()
+        
+        return {'success': True, 'message': 'Django ORM test passed'}
+        
+    except Exception as e:
+        logger.error(f"Django ORM test failed: {e}")
+        
+        # Update task record to failed
+        if task_record:
+            task_record.status = 'failed'
+            task_record.error_message = str(e)
+            task_record.completed_at = timezone.now()
+            task_record.save()
+        
+        return {'success': False, 'error': str(e)}
+
+
+@shared_task(bind=True)
+def process_user_message(self, session_id, message_content, user_id=None):
+    """Process a user message with Nagatha Assistant using Redis storage."""
+    print("DEBUG: process_user_message task started")
+    logger.info("process_user_message task started")
+    
+    try:
+        # Get or create the session
+        session, created = Session.objects.get_or_create(
+            id=session_id,
+            defaults={'user_id': user_id}
+        )
+        
+        # Create user message
+        user_message = Message.objects.create(
+            session=session,
+            content=message_content,
+            message_type='user'
+        )
+        
+        print(f"DEBUG: User message created with ID: {user_message.id}")
+        logger.info(f"User message created with ID: {user_message.id}")
+        
+        # Try to use Redis-based Nagatha adapter for full functionality
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            response = loop.run_until_complete(adapter.send_message(
-                session_id=session.nagatha_session_id,
-                message=message_content
-            ))
-        finally:
-            loop.close()
+            print("DEBUG: Attempting to use Redis-based Nagatha adapter for message processing")
+            logger.info("Attempting to use Redis-based Nagatha adapter for message processing")
+            adapter = NagathaRedisAdapter()
+            print("DEBUG: NagathaRedisAdapter created successfully")
+            logger.info("NagathaRedisAdapter created successfully")
+            
+            # Use asyncio.run() which properly handles the event loop
+            try:
+                # Process message with Nagatha using Redis storage
+                nagatha_session_id = session.nagatha_session_id
+                print(f"DEBUG: Processing message with Nagatha session ID: {nagatha_session_id}")
+                logger.info(f"Processing message with Nagatha session ID: {nagatha_session_id}")
+                
+                response = asyncio.run(
+                    adapter.send_message(nagatha_session_id, message_content)
+                )
+                print(f"DEBUG: Nagatha response received: {response[:100]}...")
+                logger.info(f"Nagatha response received: {response[:100]}...")
+                
+                # Update session with Nagatha session ID if this was a new session
+                if nagatha_session_id is None and response:
+                    # Create new Nagatha session ID
+                    new_nagatha_session = asyncio.run(adapter.start_session())
+                    session.nagatha_session_id = new_nagatha_session
+                    session.save()
+                    print(f"DEBUG: New Nagatha session created: {new_nagatha_session}")
+                    logger.info(f"New Nagatha session created: {new_nagatha_session}")
+                
+            except Exception as async_error:
+                print(f"DEBUG: Async operation failed: {async_error}")
+                logger.error(f"Async operation failed: {async_error}")
+                logger.error(f"Async error type: {type(async_error)}")
+                import traceback
+                logger.error(f"Async error traceback: {traceback.format_exc()}")
+                raise
+                
+        except Exception as nagatha_error:
+            print(f"DEBUG: Redis adapter failed, falling back to simple response: {nagatha_error}")
+            logger.warning(f"Redis adapter failed, falling back to simple response: {nagatha_error}")
+            logger.warning(f"Redis error type: {type(nagatha_error)}")
+            import traceback
+            logger.warning(f"Redis error traceback: {traceback.format_exc()}")
+            
+            # Fallback to simple response
+            response = get_simple_response(message_content)
         
-        # Save assistant response
+        # Create assistant message
         assistant_message = Message.objects.create(
             session=session,
             content=response,
             message_type='assistant'
         )
         
-        # Update task status
-        if task_record:
-            task_record.status = 'completed'
-            task_record.completed_at = timezone.now()
-            task_record.progress = 100
-            task_record.result = {
-                'response_message_id': str(assistant_message.id),
-                'response_length': len(response)
-            }
-            task_record.save()
+        print(f"DEBUG: Assistant message created with ID: {assistant_message.id}")
+        logger.info(f"Assistant message created with ID: {assistant_message.id}")
         
-        return {
-            'success': True,
-            'response_message_id': str(assistant_message.id)
-        }
+        # Update task result
+        self.update_state(
+            state='SUCCESS',
+            meta={
+                'session_id': session_id,
+                'user_message_id': user_message.id,
+                'assistant_message_id': assistant_message.id,
+                'response': response[:100] + "..." if len(response) > 100 else response
+            }
+        )
+        
+        print("DEBUG: process_user_message task completed successfully")
+        logger.info("process_user_message task completed successfully")
         
     except Exception as e:
-        logger.error(f"Error processing message: {e}")
+        print(f"DEBUG: Task failed with error: {e}")
+        logger.error(f"Task failed with error: {e}")
+        logger.error(f"Error type: {type(e)}")
+        import traceback
+        logger.error(f"Error traceback: {traceback.format_exc()}")
         
-        # Update task status
-        if task_record:
-            task_record.status = 'failed'
-            task_record.completed_at = timezone.now()
-            task_record.error_message = str(e)
-            task_record.save()
-        
-        # Save error message
-        try:
-            session = Session.objects.get(id=session_id)
-            Message.objects.create(
-                session=session,
-                content=f"Sorry, I encountered an error: {str(e)}",
-                message_type='error'
-            )
-        except Exception:
-            pass
-        
+        # Update task result with error
+        self.update_state(
+            state='FAILURE',
+            meta={'error': str(e)}
+        )
         raise
 
 
@@ -95,14 +313,15 @@ def process_user_message(self, session_id, message_content, user_id=None):
 def refresh_system_status():
     """Refresh system status information."""
     try:
-        adapter = NagathaAdapter()
-        # Create a new event loop for this task to avoid conflicts with Celery
+        adapter = NagathaRedisAdapter()
+        
+        # Use asyncio.run() which properly handles the event loop
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            status_info = loop.run_until_complete(adapter.get_system_status())
-        finally:
-            loop.close()
+            # Run the async operation
+            status_info = asyncio.run(adapter.get_system_status())
+        except Exception as async_error:
+            logger.error(f"Async operation failed: {async_error}")
+            raise
         
         # Create new status record
         SystemStatus.objects.create(
@@ -125,7 +344,8 @@ def refresh_system_status():
         
     except Exception as e:
         logger.error(f"Error refreshing system status: {e}")
-        raise
+        # Don't raise the exception, just log it and return failure
+        return {'success': False, 'error': str(e)}
 
 
 @shared_task

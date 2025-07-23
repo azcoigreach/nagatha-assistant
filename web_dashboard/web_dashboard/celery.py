@@ -5,7 +5,7 @@ import os
 from celery import Celery
 
 # Set the Django settings module for the 'celery' program.
-os.environ['DJANGO_SETTINGS_MODULE'] = 'web_dashboard.settings.production'
+os.environ['DJANGO_SETTINGS_MODULE'] = os.getenv('DJANGO_SETTINGS_MODULE', 'web_dashboard.settings.production')
 
 app = Celery('web_dashboard')
 
