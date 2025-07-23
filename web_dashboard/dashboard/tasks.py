@@ -201,7 +201,7 @@ def test_django_orm(self):
 
 @shared_task(bind=True)
 def process_user_message(self, session_id, message_content, user_id=None):
-    """Process a user message with Nagatha Assistant using Redis storage."""
+    """Process a user message with Nagatha Assistant using the new Celery system."""
     print("DEBUG: process_user_message task started")
     logger.info("process_user_message task started")
     
@@ -222,17 +222,30 @@ def process_user_message(self, session_id, message_content, user_id=None):
         print(f"DEBUG: User message created with ID: {user_message.id}")
         logger.info(f"User message created with ID: {user_message.id}")
         
-        # Try to use Redis-based Nagatha adapter for full functionality
+        # Try to use the new Nagatha Celery system
         try:
-            print("DEBUG: Attempting to use Redis-based Nagatha adapter for message processing")
-            logger.info("Attempting to use Redis-based Nagatha adapter for message processing")
-            adapter = NagathaRedisAdapter()
-            print("DEBUG: NagathaRedisAdapter created successfully")
-            logger.info("NagathaRedisAdapter created successfully")
+            from .nagatha_celery_bridge import process_message_with_nagatha
             
-            # Use asyncio.run() which properly handles the event loop
+            result = process_message_with_nagatha(session_id, message_content, use_celery=True)
+            
+            if result['success']:
+                response = result['response']
+                method = result['method']
+                print(f"DEBUG: Nagatha response via {method}: {response[:100]}...")
+                logger.info(f"Nagatha response via {method}: {response[:100]}...")
+            else:
+                response = result['response']
+                logger.warning(f"Nagatha processing failed: {result.get('error', 'Unknown error')}")
+                
+        except Exception as bridge_error:
+            print(f"DEBUG: Celery bridge failed, falling back to Redis adapter: {bridge_error}")
+            logger.warning(f"Celery bridge failed, falling back to Redis adapter: {bridge_error}")
+            
+            # Fallback to original Redis adapter approach
             try:
-                # Process message with Nagatha using Redis storage
+                adapter = NagathaRedisAdapter()
+                
+                # Use asyncio.run() which properly handles the event loop
                 nagatha_session_id = session.nagatha_session_id
                 print(f"DEBUG: Processing message with Nagatha session ID: {nagatha_session_id}")
                 logger.info(f"Processing message with Nagatha session ID: {nagatha_session_id}")
@@ -248,6 +261,16 @@ def process_user_message(self, session_id, message_content, user_id=None):
                     # Create new Nagatha session ID
                     new_nagatha_session = asyncio.run(adapter.start_session())
                     session.nagatha_session_id = new_nagatha_session
+                    session.save()
+                    print(f"DEBUG: New Nagatha session created: {new_nagatha_session}")
+                    logger.info(f"New Nagatha session created: {new_nagatha_session}")
+                    
+            except Exception as nagatha_error:
+                print(f"DEBUG: Redis adapter failed, using simple response: {nagatha_error}")
+                logger.warning(f"Redis adapter failed, using simple response: {nagatha_error}")
+                
+                # Final fallback to simple response
+                response = get_simple_response(message_content)
                     session.save()
                     print(f"DEBUG: New Nagatha session created: {new_nagatha_session}")
                     logger.info(f"New Nagatha session created: {new_nagatha_session}")
