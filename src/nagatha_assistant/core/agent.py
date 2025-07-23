@@ -13,7 +13,8 @@ from nagatha_assistant.utils.usage_tracker import record_usage
 from nagatha_assistant.utils.logger import setup_logger_with_env_control, should_log_to_chat
 from nagatha_assistant.core.mcp_manager import get_mcp_manager, shutdown_mcp_manager
 from nagatha_assistant.core.personality import get_system_prompt
-from nagatha_assistant.core.event_bus import get_event_bus
+# Use the compatibility layer for event bus
+from nagatha_assistant.core.celery_storage import get_event_bus, ensure_event_bus_started, shutdown_event_bus
 from nagatha_assistant.core.event import (
     StandardEventTypes, create_system_event, create_agent_event, EventPriority
 )
@@ -160,24 +161,43 @@ async def start_session() -> int:
     except Exception as e:
         logging.exception(f"Error ensuring plugins are loaded: {e}")
     
-    async with SessionLocal() as session:
-        new_session = ConversationSession()
-        session.add(new_session)
-        await session.commit()
-        await session.refresh(new_session)
-        session_id = new_session.id
+    # Try to use Celery-based session creation first
+    try:
+        from nagatha_assistant.core.celery_storage import create_session_async
+        session_id = await create_session_async()
         
-        # Publish conversation started event
-        event_bus = get_event_bus()
-        if event_bus._running:
-            conversation_event = create_agent_event(
-                StandardEventTypes.AGENT_CONVERSATION_STARTED,
-                session_id,
-                {"session_created_at": new_session.created_at.isoformat() if new_session.created_at else None}
-            )
-            event_bus.publish_sync(conversation_event)
+        # Publish conversation started event through Celery
+        event_bus = await ensure_event_bus_started()
+        conversation_event = create_agent_event(
+            StandardEventTypes.AGENT_CONVERSATION_STARTED,
+            session_id
+        )
+        await event_bus.publish(conversation_event)
         
         return session_id
+        
+    except Exception as celery_error:
+        logging.warning(f"Celery session creation failed, falling back to SQLAlchemy: {celery_error}")
+        
+        # Fallback to original SQLAlchemy approach
+        async with SessionLocal() as session:
+            new_session = ConversationSession()
+            session.add(new_session)
+            await session.commit()
+            await session.refresh(new_session)
+            session_id = new_session.id
+            
+            # Publish conversation started event
+            event_bus = get_event_bus()
+            if hasattr(event_bus, '_running') and event_bus._running:
+                conversation_event = create_agent_event(
+                    StandardEventTypes.AGENT_CONVERSATION_STARTED,
+                    session_id,
+                    {"session_created_at": new_session.created_at.isoformat() if new_session.created_at else None}
+                )
+                event_bus.publish_sync(conversation_event)
+            
+            return session_id
 
 async def get_messages(session_id: int) -> List[Message]:
     """Retrieve all messages for a session, ordered by timestamp."""
@@ -625,6 +645,27 @@ async def send_message(
     await _notify(session_id, bot)
 
     return assistant_msg
+
+
+async def send_message_via_celery(session_id: int, user_message: str) -> str:
+    """
+    Send a user message using Celery task queue and get Nagatha's response.
+    
+    Args:
+        session_id: Session ID
+        user_message: User's message content
+        
+    Returns:
+        Assistant's response
+    """
+    try:
+        from nagatha_assistant.core.celery_storage import send_message_async
+        return await send_message_async(session_id, user_message)
+        
+    except Exception as e:
+        logger.error(f"Celery message processing failed: {e}")
+        # Fallback to original send_message
+        return await send_message(session_id, user_message)
 
 async def push_message(
     session_id: int,

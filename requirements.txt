@@ -12,3 +12,7 @@ pytest
 pytest-cov
 discord.py
 psutil
+# Celery and Redis dependencies
+celery==5.3.4
+redis==5.0.1
+kombu==5.3.4

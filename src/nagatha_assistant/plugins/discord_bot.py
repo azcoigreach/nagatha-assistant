@@ -436,14 +436,20 @@ class DiscordBotPlugin(SimplePlugin):
         await interaction.response.defer(ephemeral=private)
         
         try:
-            from ..core.agent import send_message, start_session
+            from ..core.agent import send_message_via_celery, start_session
             
             # Create or get user session
             user_id = str(interaction.user.id)
             session_id = await start_session()
             
-            # Get AI response
-            response = await send_message(session_id, message)
+            # Get AI response using Celery-based processing
+            try:
+                response = await send_message_via_celery(session_id, message)
+            except Exception as celery_error:
+                logger.warning(f"Celery processing failed, falling back: {celery_error}")
+                # Fallback to direct processing
+                from ..core.agent import send_message
+                response = await send_message(session_id, message)
             
             # Split long responses (Discord limit is 2000 chars)
             if len(response) > 2000:
