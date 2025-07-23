@@ -291,7 +291,7 @@ def system_health_check_task():
     Perform system health check.
     """
     try:
-        from nagatha_assistant.core.celery_storage import get_system_status
+        from nagatha_assistant.core.celery_event_storage import get_system_status
         
         status = get_system_status()
         
@@ -315,7 +315,7 @@ def cleanup_old_data_task():
     Clean up old data from the system.
     """
     try:
-        from nagatha_assistant.core.celery_storage import cleanup_old_data
+        from nagatha_assistant.core.celery_event_storage import cleanup_old_data
         
         result = cleanup_old_data()
         
@@ -380,7 +380,7 @@ def publish_system_status_task():
     Publish current system status as an event.
     """
     try:
-        from nagatha_assistant.core.celery_storage import get_system_status
+        from nagatha_assistant.core.celery_event_storage import get_system_status
         
         status = get_system_status()
         
