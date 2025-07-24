@@ -102,7 +102,6 @@ async function handleMessageSubmit(e) {
         
     } catch (error) {
         console.error('Failed to send message:', error);
-        showError(`Failed to send message: ${error.message}`);
         
         // Add error message to UI
         addMessageToUI({

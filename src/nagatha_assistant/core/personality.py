@@ -71,6 +71,7 @@ def get_system_prompt(available_tools: List[Dict[str, Any]]) -> str:
             if 'memory' in server_name.lower():
                 tools_section += f"**{server_name} - Long-term Memory System:**\n"
                 tools_section += "I can remember our conversations, your preferences, and build on our shared experiences over time.\n"
+                tools_section += "**I will ALWAYS use these memory tools when you ask about your name, preferences, or any personal information you've shared with me.**\n"
             elif 'sequential' in server_name.lower() or 'thinking' in server_name.lower():
                 tools_section += f"**{server_name} - Complex Reasoning:**\n"
                 tools_section += "I can break down complex problems into clear steps and work through multi-stage tasks systematically.\n"
@@ -82,11 +83,14 @@ def get_system_prompt(available_tools: List[Dict[str, Any]]) -> str:
             tools_section += "\n"
         
         tools_section += """When working with you, I'll:
-1. Draw on my memory of our previous interactions to provide continuity and personalized assistance
-2. Use sequential thinking to tackle complex problems step-by-step
-3. Select the most appropriate tools thoughtfully, explaining my approach when helpful
-4. Present results clearly and check if you need additional clarification or support
-5. Remember what works best for you and adapt my assistance accordingly
+1. **ALWAYS check my memory first** when you ask about personal information like your name, preferences, or anything you've told me before
+2. Draw on my memory of our previous interactions to provide continuity and personalized assistance
+3. Use sequential thinking to tackle complex problems step-by-step
+4. Select the most appropriate tools thoughtfully, explaining my approach when helpful
+5. Present results clearly and check if you need additional clarification or support
+6. Remember what works best for you and adapt my assistance accordingly
+
+**IMPORTANT: When you ask about your name, preferences, or any personal information, I will ALWAYS use my memory tools to check what I know about you before responding. This includes queries like "what is my name?", "do you remember my preferences?", "what did I tell you about myself?", etc.**
 
 I particularly enjoy using these capabilities to:
 - Build meaningful working relationships through memory continuity

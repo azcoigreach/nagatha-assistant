@@ -46,6 +46,21 @@ class NagathaRealAdapter:
             from nagatha_assistant.core.mcp_manager import get_mcp_manager
             self._mcp_manager = await get_mcp_manager()
             
+            # Initialize the full Nagatha system including plugins
+            try:
+                from nagatha_assistant.core.agent import startup
+                startup_result = await startup()
+                logger.info(f"Nagatha system startup completed: {startup_result}")
+                
+                # Check plugin status
+                from nagatha_assistant.core.plugin_manager import get_plugin_manager
+                plugin_manager = get_plugin_manager()
+                plugin_status = plugin_manager.get_plugin_status()
+                logger.info(f"Plugin system status: {len(plugin_status)} plugins available")
+                
+            except Exception as system_error:
+                logger.warning(f"System initialization warning: {system_error}")
+            
             self._initialized = True
             logger.info("Nagatha Real adapter initialized successfully")
             
@@ -141,12 +156,15 @@ class NagathaRealAdapter:
         """Get available tools from the real Nagatha system."""
         try:
             await self._ensure_initialized()
-            tools = self._mcp_manager.get_available_tools()
+            
+            # Get both MCP tools and plugin commands
+            from nagatha_assistant.core.agent import get_available_tools as get_all_tools
+            tools = await get_all_tools()
             
             return {
                 "tools": tools,
                 "total": len(tools),
-                "note": "Real tools from Nagatha MCP system"
+                "note": "Real tools from Nagatha MCP system and plugin commands"
             }
         except Exception as e:
             logger.error(f"Error getting available tools: {e}")

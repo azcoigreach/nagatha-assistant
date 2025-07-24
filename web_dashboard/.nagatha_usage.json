@@ -4,17 +4,23 @@
     "reset_count": 0
   },
   "gpt-4o-mini": {
-    "prompt_tokens": 480551,
-    "completion_tokens": 7018,
-    "cost_usd": 0.07629345000000001,
-    "requests": 46,
-    "last_used": "2025-07-23T22:05:07.411647",
+    "prompt_tokens": 1198489,
+    "completion_tokens": 10688,
+    "cost_usd": 0.1861861499999999,
+    "requests": 100,
+    "last_used": "2025-07-24T04:36:05.778105",
     "daily_usage": {
       "2025-07-23": {
-        "prompt_tokens": 480551,
-        "completion_tokens": 7018,
-        "cost_usd": 0.07629345000000001,
-        "requests": 46
+        "prompt_tokens": 506745,
+        "completion_tokens": 7481,
+        "cost_usd": 0.08050035000000001,
+        "requests": 48
+      },
+      "2025-07-24": {
+        "prompt_tokens": 691744,
+        "completion_tokens": 3207,
+        "cost_usd": 0.1056858,
+        "requests": 52
       }
     }
   }

@@ -23,4 +23,7 @@ urlpatterns = [
     path('api/user-preferences/', views.get_user_preferences, name='get_user_preferences'),
     path('api/update-preferences/', views.update_user_preferences, name='update_user_preferences'),
     path('api/test-theme/', views.test_theme_api, name='test_theme_api'),
+    path('api/active-tasks/', views.get_active_tasks, name='get_active_tasks'),
+    path('api/celery-workers/', views.get_celery_workers, name='get_celery_workers'),
+    path('api/usage-data/', views.get_usage_data, name='get_usage_data'),
 ]

@@ -98,10 +98,11 @@
     // Scroll to bottom on page load
     document.addEventListener('DOMContentLoaded', scrollToBottom);
     
-    // Poll for new messages every 5 seconds
-    const sessionId = document.getElementById('session-id').value;
-    setInterval(() => {
-        loadSessionMessages(sessionId);
-    }, 5000);
+    // Override the polling behavior for session detail page
+    // We don't want to poll for new messages on a history view
+    if (typeof messagePollingInterval !== 'undefined') {
+        clearInterval(messagePollingInterval);
+        messagePollingInterval = null;
+    }
 </script>
 {% endblock %}

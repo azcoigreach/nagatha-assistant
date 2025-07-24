@@ -74,13 +74,13 @@ class MemoryPlugin(BasePlugin):
         
         plugin_manager.register_command(PluginCommand(
             name="memory_get",
-            description="Retrieve a value from memory",
+            description="Retrieve a value from a specific memory section (use memory_get_user_preference for user names, preferences, etc.)",
             handler=self._memory_get,
             plugin_name=self.name,
             parameters={
                 "type": "object",
                 "properties": {
-                    "section": {"type": "string", "description": "Memory section"},
+                    "section": {"type": "string", "description": "Memory section (user_preferences, session_state, facts, temporary, command_history)"},
                     "key": {"type": "string", "description": "Key to retrieve"},
                     "session_id": {"type": "integer", "description": "Optional session ID for session-scoped retrieval"},
                     "default": {"description": "Default value if key not found"}
@@ -108,13 +108,13 @@ class MemoryPlugin(BasePlugin):
         # User preferences
         plugin_manager.register_command(PluginCommand(
             name="memory_set_user_preference",
-            description="Set a user preference (permanent storage)",
+            description="Set a user preference like name, email, preferences, settings, or any personal information (permanent storage)",
             handler=self._set_user_preference,
             plugin_name=self.name,
             parameters={
                 "type": "object",
                 "properties": {
-                    "key": {"type": "string", "description": "Preference key"},
+                    "key": {"type": "string", "description": "Preference key (e.g., 'name', 'email', 'preferences')"},
                     "value": {"description": "Preference value"}
                 },
                 "required": ["key", "value"]
@@ -123,13 +123,13 @@ class MemoryPlugin(BasePlugin):
         
         plugin_manager.register_command(PluginCommand(
             name="memory_get_user_preference",
-            description="Get a user preference",
+            description="Get a user preference like name, email, preferences, settings, or any personal information the user has shared",
             handler=self._get_user_preference,
             plugin_name=self.name,
             parameters={
                 "type": "object",
                 "properties": {
-                    "key": {"type": "string", "description": "Preference key"},
+                    "key": {"type": "string", "description": "Preference key (e.g., 'name', 'email', 'preferences')"},
                     "default": {"description": "Default value if not found"}
                 },
                 "required": ["key"]

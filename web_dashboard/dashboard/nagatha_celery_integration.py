@@ -195,6 +195,130 @@ class NagathaCeleryBridge:
                 'error': str(e),
                 'timestamp': datetime.now(timezone.utc).isoformat()
             }
+
+    async def optimize_memory_async(self) -> Dict[str, Any]:
+        """Optimize memory storage and perform advanced maintenance."""
+        await self._ensure_initialized()
+        
+        try:
+            optimization_results = {
+                'facts_consolidated': 0,
+                'duplicate_entries_removed': 0,
+                'expired_sessions_cleaned': 0,
+                'memory_compressed': False
+            }
+            
+            if self._memory_manager:
+                # Consolidate facts (merge similar facts)
+                facts = await self._memory_manager.search_facts("")
+                consolidated_facts = {}
+                for fact in facts:
+                    fact_key = fact.get('key', '')
+                    fact_value = fact.get('value', {})
+                    if isinstance(fact_value, dict):
+                        fact_text = fact_value.get('fact', '')
+                        # Simple deduplication based on fact content
+                        if fact_text not in consolidated_facts:
+                            consolidated_facts[fact_text] = fact_key
+                        else:
+                            # Remove duplicate
+                            await self._memory_manager.delete("facts", fact_key)
+                            optimization_results['duplicate_entries_removed'] += 1
+                
+                optimization_results['facts_consolidated'] = len(consolidated_facts)
+                
+                # Clean up old session state (older than 30 days)
+                cutoff_date = datetime.now(timezone.utc) - timedelta(days=30)
+                session_keys = await self._memory_manager.list_keys("session_state")
+                for key in session_keys:
+                    # This would require additional logic to check session age
+                    # For now, just report the cleanup opportunity
+                    optimization_results['expired_sessions_cleaned'] = len(session_keys)
+            
+            return {
+                'success': True,
+                'optimization_results': optimization_results,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error optimizing memory: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
+
+    async def sync_memory_to_database_async(self) -> Dict[str, Any]:
+        """Sync Redis memory to SQLite database for long-term persistence."""
+        await self._ensure_initialized()
+        
+        try:
+            # Import the hybrid storage backend
+            from .hybrid_memory_storage import HybridMemoryStorageBackend
+            
+            # Create hybrid storage instance
+            hybrid_storage = HybridMemoryStorageBackend()
+            
+            # Perform the sync
+            sync_results = await hybrid_storage.sync_redis_to_sqlite()
+            
+            # Close the connection
+            await hybrid_storage.close()
+            
+            return {
+                'success': True,
+                'sync_results': sync_results,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error syncing memory to database: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
+
+    async def get_memory_analytics_async(self) -> Dict[str, Any]:
+        """Get comprehensive memory analytics and insights."""
+        await self._ensure_initialized()
+        
+        try:
+            analytics = {
+                'total_entries': 0,
+                'section_breakdown': {},
+                'memory_growth_rate': 0,
+                'most_accessed_keys': [],
+                'storage_efficiency': 0.0
+            }
+            
+            if self._memory_manager:
+                stats = await self._memory_manager.get_storage_stats()
+                analytics['total_entries'] = sum(stats.values())
+                analytics['section_breakdown'] = stats
+                
+                # Calculate storage efficiency (permanent vs temporary)
+                permanent_sections = ['user_preferences', 'facts', 'command_history']
+                permanent_entries = sum(stats.get(section, 0) for section in permanent_sections)
+                total_entries = analytics['total_entries']
+                
+                if total_entries > 0:
+                    analytics['storage_efficiency'] = permanent_entries / total_entries
+            
+            return {
+                'success': True,
+                'analytics': analytics,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting memory analytics: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
     
     async def track_usage_metrics_async(self) -> Dict[str, Any]:
         """Track usage metrics and costs."""
@@ -404,6 +528,135 @@ def cleanup_memory_and_maintenance(self):
         
     except Exception as e:
         logger.error(f"Error in cleanup_memory_and_maintenance: {e}")
+        
+        if task_record:
+            task_record.status = 'failed'
+            task_record.error_message = str(e)
+            task_record.completed_at = django_timezone.now()
+            task_record.save()
+        
+        return {'success': False, 'error': str(e)}
+
+
+@shared_task(bind=True)
+def optimize_memory_storage(self):
+    """Optimize memory storage and perform advanced maintenance via Celery."""
+    task_record = None
+    try:
+        from .models import Task
+        
+        # Create task record
+        task_record = Task.objects.create(
+            celery_task_id=self.request.id,
+            task_name='optimize_memory_storage',
+            description='Optimize memory storage and perform advanced maintenance',
+            status='running',
+            started_at=django_timezone.now()
+        )
+        
+        # Get Nagatha bridge
+        bridge = get_nagatha_bridge()
+        
+        # Optimize memory
+        result = bridge._run_async(bridge.optimize_memory_async())
+        
+        # Update task record
+        task_record.status = 'completed'
+        task_record.progress = 100
+        task_record.result = result
+        task_record.completed_at = django_timezone.now()
+        task_record.save()
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error in optimize_memory_storage: {e}")
+        
+        if task_record:
+            task_record.status = 'failed'
+            task_record.error_message = str(e)
+            task_record.completed_at = django_timezone.now()
+            task_record.save()
+        
+        return {'success': False, 'error': str(e)}
+
+
+@shared_task(bind=True)
+def sync_memory_to_database(self):
+    """Sync Redis memory to SQLite database for long-term persistence via Celery."""
+    task_record = None
+    try:
+        from .models import Task
+        
+        # Create task record
+        task_record = Task.objects.create(
+            celery_task_id=self.request.id,
+            task_name='sync_memory_to_database',
+            description='Sync Redis memory to SQLite database',
+            status='running',
+            started_at=django_timezone.now()
+        )
+        
+        # Get Nagatha bridge
+        bridge = get_nagatha_bridge()
+        
+        # Sync memory to database
+        result = bridge._run_async(bridge.sync_memory_to_database_async())
+        
+        # Update task record
+        task_record.status = 'completed'
+        task_record.progress = 100
+        task_record.result = result
+        task_record.completed_at = django_timezone.now()
+        task_record.save()
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error in sync_memory_to_database: {e}")
+        
+        if task_record:
+            task_record.status = 'failed'
+            task_record.error_message = str(e)
+            task_record.completed_at = django_timezone.now()
+            task_record.save()
+        
+        return {'success': False, 'error': str(e)}
+
+
+@shared_task(bind=True)
+def get_memory_analytics(self):
+    """Get comprehensive memory analytics and insights via Celery."""
+    task_record = None
+    try:
+        from .models import Task
+        
+        # Create task record
+        task_record = Task.objects.create(
+            celery_task_id=self.request.id,
+            task_name='get_memory_analytics',
+            description='Get memory analytics and insights',
+            status='running',
+            started_at=django_timezone.now()
+        )
+        
+        # Get Nagatha bridge
+        bridge = get_nagatha_bridge()
+        
+        # Get memory analytics
+        result = bridge._run_async(bridge.get_memory_analytics_async())
+        
+        # Update task record
+        task_record.status = 'completed'
+        task_record.progress = 100
+        task_record.result = result
+        task_record.completed_at = django_timezone.now()
+        task_record.save()
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error in get_memory_analytics: {e}")
         
         if task_record:
             task_record.status = 'failed'

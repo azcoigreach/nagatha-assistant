@@ -2,5 +2,20 @@
   "_metadata": {
     "reset_timestamp": "2025-07-20T21:33:13.906224",
     "reset_count": 1
+  },
+  "gpt-4o-mini": {
+    "prompt_tokens": 44878,
+    "completion_tokens": 174,
+    "cost_usd": 0.006836099999999999,
+    "requests": 5,
+    "last_used": "2025-07-23T18:18:28.705387",
+    "daily_usage": {
+      "2025-07-23": {
+        "prompt_tokens": 44878,
+        "completion_tokens": 174,
+        "cost_usd": 0.006836099999999999,
+        "requests": 5
+      }
+    }
   }
 }

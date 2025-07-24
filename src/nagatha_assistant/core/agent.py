@@ -330,7 +330,7 @@ def _select_relevant_tools(available_tools: List[Dict[str, Any]], user_message: 
     file_keywords = ['file', 'read', 'write', 'directory', 'folder', 'save', 'load', 'path']
     code_keywords = ['python', 'code', 'script', 'execute', 'run', 'programming', 'function']
     github_keywords = ['github', 'git', 'repository', 'repo', 'issue', 'pull request', 'commit']
-    memory_keywords = ['remember', 'recall', 'memory', 'knowledge', 'graph', 'entity', 'relationship']
+    memory_keywords = ['remember', 'recall', 'memory', 'knowledge', 'graph', 'entity', 'relationship', 'name', 'preference', 'preferences', 'stored', 'saved', 'my', 'what is', 'what are', 'do you know', 'can you remember']
     time_keywords = ['time', 'date', 'calendar', 'schedule', 'when', 'today', 'tomorrow']
     thinking_keywords = ['think', 'analyze', 'reason', 'consider', 'evaluate', 'step by step']
     
