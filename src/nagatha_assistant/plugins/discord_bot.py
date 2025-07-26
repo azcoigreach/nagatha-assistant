@@ -129,24 +129,38 @@ class NagathaDiscordBot(commands.Bot):
         logger.info(f'Discord bot logged in as {self.user} (ID: {self.user.id})')
         logger.info(f'Connected to {len(self.guilds)} guild(s): {[guild.name for guild in self.guilds]}')
         
+        # Debug: Check what commands are registered
+        registered_commands = [cmd.name for cmd in self.tree.get_commands()]
+        logger.info(f"Registered commands in tree: {registered_commands}")
+        
         # Sync slash commands
         try:
             # Sync globally or to specific guild
             guild_id = self.discord_plugin.guild_id
+            logger.info(f"Attempting to sync commands with guild_id: {guild_id}")
+            
             if guild_id:
                 guild = self.get_guild(int(guild_id))
                 if guild:
+                    logger.info(f"Found guild: {guild.name} (ID: {guild.id})")
                     synced = await self.tree.sync(guild=guild)
                     logger.info(f"Synced {len(synced)} slash commands to guild {guild.name}")
+                    for cmd in synced:
+                        logger.info(f"  - Synced command: {cmd.name}")
                 else:
                     logger.warning(f"Guild with ID {guild_id} not found, syncing globally")
                     synced = await self.tree.sync()
                     logger.info(f"Synced {len(synced)} slash commands globally")
             else:
+                logger.info("No guild_id specified, syncing globally")
                 synced = await self.tree.sync()
                 logger.info(f"Synced {len(synced)} slash commands globally")
+                for cmd in synced:
+                    logger.info(f"  - Synced command: {cmd.name}")
         except Exception as e:
             logger.error(f"Failed to sync slash commands: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
         
         # Publish bot ready event
         event = create_system_event(
@@ -609,11 +623,15 @@ class DiscordBotPlugin(SimplePlugin):
                 await self._handle_auto_chat_command(interaction, action)
             
             # Register commands with the bot tree
+            logger.info("Adding commands to bot tree...")
             self.bot.tree.add_command(chat_command)
             self.bot.tree.add_command(status_command)
             self.bot.tree.add_command(help_command)
             self.bot.tree.add_command(auto_chat_command)
             
+            # Verify commands were added
+            registered_commands = [cmd.name for cmd in self.bot.tree.get_commands()]
+            logger.info(f"Commands in tree after registration: {registered_commands}")
             logger.info("Registered legacy slash commands: chat, status, help, auto-chat")
             
         except Exception as e:
