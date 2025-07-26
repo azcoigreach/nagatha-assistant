@@ -6,12 +6,18 @@ from nagatha_assistant.core.agent import start_session, get_messages, send_messa
 
 @pytest.mark.asyncio
 async def test_start_session_and_get_messages():
-    # New session should have no messages initially
+    # New session should have a welcome message initially
     session_id = await start_session()
     assert isinstance(session_id, int) and session_id > 0
     messages = await get_messages(session_id)
     assert isinstance(messages, list)
-    assert len(messages) == 0
+    assert len(messages) >= 1  # At least one message (welcome message)
+    
+    # Check that the first message is a welcome message from assistant
+    welcome_message = messages[0]
+    assert welcome_message.role == 'assistant'
+    assert 'Hello' in welcome_message.content  # Welcome message should contain greeting
+    assert 'Nagatha' in welcome_message.content  # Should mention Nagatha
 
 
 @pytest.mark.asyncio
@@ -50,11 +56,29 @@ async def test_send_message_stores_history(monkeypatch):
     # Verify reply from fake API
     assert reply == 'fake reply'
 
-    # Verify messages stored in DB
+    # Verify messages stored in DB (welcome + user + assistant)
     msgs = await get_messages(sid)
-    assert len(msgs) == 2
-    assert msgs[0].role == 'user' and msgs[0].content == 'hello world'
-    assert msgs[1].role == 'assistant' and msgs[1].content == 'fake reply'
+    assert len(msgs) >= 3  # At least welcome message + user message + assistant reply
+    
+    # Find the welcome message (should be first)
+    welcome_msg = msgs[0]
+    assert welcome_msg.role == 'assistant' and 'Hello' in welcome_msg.content
+    
+    # Find the user message
+    user_msg = None
+    for msg in msgs:
+        if msg.role == 'user' and msg.content == 'hello world':
+            user_msg = msg
+            break
+    assert user_msg is not None, "User message should be found"
+    
+    # Find the assistant reply
+    assistant_msg = None
+    for msg in msgs:
+        if msg.role == 'assistant' and msg.content == 'fake reply':
+            assistant_msg = msg
+            break
+    assert assistant_msg is not None, "Assistant reply should be found"
 
     # Verify correct model and history were passed to OpenAI
     assert calls['model'] == 'test-model'

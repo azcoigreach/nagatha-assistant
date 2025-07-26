@@ -175,6 +175,7 @@ async def shutdown() -> None:
 
 async def start_session() -> int:
     """Create a new conversation session and return its ID."""
+    logger = setup_logger_with_env_control()
     await init_db()
     # Ensure MCP is initialized
     await get_mcp_manager()
@@ -201,6 +202,51 @@ async def start_session() -> int:
         await session.commit()
         await session.refresh(new_session)
         session_id = new_session.id
+        
+        # Load startup memories and create welcome message
+        try:
+            from .memory import get_contextual_recall
+            contextual_recall = get_contextual_recall()
+            
+            # Get user's name and startup memories
+            user_name = await contextual_recall.get_user_name()
+            startup_memories = await contextual_recall.get_session_startup_memories(session_id)
+            
+            # Create welcome message with context
+            welcome_message = "Hello! I'm Nagatha, your AI assistant. "
+            
+            if user_name:
+                welcome_message += f"Welcome back, {user_name}! "
+            
+            # Add context from startup memories
+            context_items = []
+            if startup_memories.get("user_preferences"):
+                context_items.append("I remember your preferences")
+            
+            if startup_memories.get("personality"):
+                context_items.append("I'll adapt to your communication style")
+            
+            if startup_memories.get("facts"):
+                context_items.append("I have some relevant context from our previous conversations")
+            
+            if context_items:
+                welcome_message += " ".join(context_items) + ". "
+            
+            welcome_message += "How can I help you today?"
+            
+            # Add the welcome message to the session
+            welcome_msg = Message(session_id=session_id, role="assistant", content=welcome_message)
+            session.add(welcome_msg)
+            await session.commit()
+            
+            logger.info(f"Session {session_id} started with welcome message for user: {user_name or 'Unknown'}")
+            
+        except Exception as e:
+            logger.warning(f"Error creating welcome message for session {session_id}: {e}")
+            # Fallback welcome message
+            welcome_msg = Message(session_id=session_id, role="assistant", content="Hello! I'm Nagatha, your AI assistant. How can I help you today?")
+            session.add(welcome_msg)
+            await session.commit()
         
         # Publish conversation started event
         event_bus = get_event_bus()
@@ -572,6 +618,14 @@ async def send_message(
                     user_message, session_id, max_results=5
                 )
                 
+                # If no relevant memories found for the specific message, get startup memories
+                if not any(relevant_memories.values()):
+                    startup_memories = await contextual_recall.get_session_startup_memories(session_id, max_results=3)
+                    # Convert startup memories to the same format as relevant memories
+                    for section, memories in startup_memories.items():
+                        if memories:
+                            relevant_memories[section] = memories
+                
                 # Get personality adaptations
                 personality_adaptations = await personality_memory.adapt_to_context(
                     user_message, session_id
@@ -580,8 +634,14 @@ async def send_message(
                 # Create base system prompt
                 base_system_prompt = get_system_prompt(available_tools)
                 
+                # Get user's name for context
+                user_name = await contextual_recall.get_user_name()
+                
                 # Enhance with memory context
                 memory_context = ""
+                if user_name:
+                    memory_context += f"\n\n## User Information:\n- **Name**: {user_name}\n"
+                
                 if any(relevant_memories.values()):
                     memory_context += "\n\n## Relevant Context from Our History:\n"
                     
@@ -596,6 +656,10 @@ async def send_message(
                                         memory_context += f"- {memory['value']['fact']}\n"
                                     elif "task" in memory["value"]:
                                         memory_context += f"- Current focus: {memory['value']['task']}\n"
+                                    elif "preference" in memory["value"]:
+                                        memory_context += f"- {memory['value']['preference']}\n"
+                                    elif "style_type" in memory["value"]:
+                                        memory_context += f"- Communication style: {memory['value']['style_type']}\n"
                 
                 # Enhance with personality adaptations
                 if personality_adaptations:

@@ -744,6 +744,99 @@ class ContextualRecall:
         
         return relevant_memories
     
+    async def get_session_startup_memories(self, session_id: Optional[int] = None,
+                                         max_results: int = 5) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Get memories that should be loaded when starting a new session.
+        This includes user preferences, name, and other important context.
+        
+        Args:
+            session_id: Optional session ID for session-specific memories
+            max_results: Maximum number of results per section
+            
+        Returns:
+            Dictionary of startup memories by section
+        """
+        startup_memories = {}
+        
+        # Get user preferences (important for session context)
+        try:
+            user_prefs = await self.memory_manager.search("user_preferences", "", session_id)
+            if user_prefs:
+                startup_memories["user_preferences"] = user_prefs[:max_results]
+        except Exception as e:
+            logger.warning(f"Error getting user preferences: {e}")
+        
+        # Get personality traits (for interaction style)
+        try:
+            personality = await self.memory_manager.search("personality", "", session_id)
+            if personality:
+                startup_memories["personality"] = personality[:max_results]
+        except Exception as e:
+            logger.warning(f"Error getting personality traits: {e}")
+        
+        # Get recent facts (for context)
+        try:
+            facts = await self.memory_manager.search("facts", "", session_id)
+            if facts:
+                # Sort by recency (assuming facts have timestamps)
+                sorted_facts = sorted(facts, key=lambda x: self._get_timestamp_score(x), reverse=True)
+                startup_memories["facts"] = sorted_facts[:max_results]
+        except Exception as e:
+            logger.warning(f"Error getting facts: {e}")
+        
+        return startup_memories
+    
+    async def get_user_name(self) -> Optional[str]:
+        """
+        Get the user's name from memory.
+        
+        Returns:
+            User's name if stored, None otherwise
+        """
+        try:
+            # Try to get name from user_preferences
+            name = await self.memory_manager.get("user_preferences", "name")
+            if name:
+                if isinstance(name, dict) and "text" in name:
+                    return name["text"]
+                elif isinstance(name, str):
+                    return name
+            
+            # Try to get name from facts
+            name_fact = await self.memory_manager.get("facts", "user_name")
+            if name_fact:
+                if isinstance(name_fact, dict) and "fact" in name_fact:
+                    return name_fact["fact"]
+                elif isinstance(name_fact, str):
+                    return name_fact
+            
+            return None
+        except Exception as e:
+            logger.warning(f"Error getting user name: {e}")
+            return None
+    
+    def _get_timestamp_score(self, memory_entry: Dict[str, Any]) -> float:
+        """Calculate a score based on timestamp for sorting by recency."""
+        try:
+            value = memory_entry.get("value", {})
+            if isinstance(value, dict):
+                # Look for various timestamp fields
+                for timestamp_field in ["stored_at", "timestamp", "created_at", "updated_at"]:
+                    if timestamp_field in value:
+                        timestamp_str = value[timestamp_field]
+                        if isinstance(timestamp_str, str):
+                            # Convert ISO timestamp to float for sorting
+                            from datetime import datetime
+                            try:
+                                dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                                return dt.timestamp()
+                            except:
+                                pass
+        except Exception:
+            pass
+        return 0.0  # Default score for entries without timestamps
+    
     def _calculate_relevance_score(self, memory_entry: Dict[str, Any], context: str) -> float:
         """Calculate relevance score for a memory entry."""
         score = 0.0
