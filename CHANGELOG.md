@@ -1,3 +1,56 @@
+## [0.9.0] - 2025-07-26
+
+### Current Application State
+Nagatha Assistant is now a comprehensive AI agent platform with:
+
+**Core Systems:**
+- **AI Agent**: GPT-4 powered conversations with context-aware responses
+- **MCP Integration**: Model Context Protocol for extensible tool integration
+- **Plugin System**: Extensible architecture with event-driven communication
+- **Event Bus**: Centralized event system for component coordination
+- **Memory System**: Persistent cross-session storage with TTL support
+- **Database**: SQLite with Alembic migrations, PostgreSQL support
+
+**User Interfaces:**
+- **Dashboard UI**: Multi-panel interface with real-time monitoring (recommended)
+- **Textual UI**: Terminal-based chat interface
+- **Discord Bot**: Slash commands with plugin extensibility
+- **CLI**: Comprehensive command-line interface
+- **Programmatic API**: Python library for integration
+
+**Core Features:**
+- **Notes**: Rich note-taking with markdown, tags, and full-text search
+- **Tasks**: Complete task management with priorities, due dates, and statuses
+- **Reminders**: Automated scheduling with recurring patterns
+- **Web Research**: MCP-powered scraping and content analysis
+- **Usage Tracking**: Token usage monitoring with cost analysis and reset functionality
+
+**Integration Capabilities:**
+- **MCP Servers**: Support for firecrawl-mcp, mastodon-mcp, memory-mcp, and custom servers
+- **Discord Integration**: Slash commands, plugin extensibility, MCP tool integration
+- **Event System**: Publish/subscribe pattern with priorities and history
+- **Plugin Development**: Easy custom plugin creation and integration
+
+### Added
+- Enhanced Dashboard UI with multi-panel layout and real-time monitoring
+- Persistent Memory System with CLI, AI tools, and event integration
+- Discord Bot integration with slash commands and plugin extensibility
+- Event Bus System for centralized component communication
+- Plugin System with lifecycle management and dependency resolution
+- Usage tracking with reset functionality and enhanced metrics
+- Comprehensive documentation for all major systems
+
+### Changed
+- Refactored architecture to use event-driven plugin system
+- Enhanced MCP integration with on-demand connections
+- Improved conversation handling with better context management
+- Updated all documentation to reflect current functionality
+
+### Fixed
+- Token usage tracking for multi-turn conversations
+- Database migration handling for existing installations
+- Event system memory management and cleanup
+
 ## [0.8.0] - 2025-05-07
 
 ### Changed

@@ -222,7 +222,10 @@ class TestCLI:
         mock_shutdown.return_value = AsyncMock()
         mock_manager = MagicMock()
         mock_manager.get_available_tools.return_value = ['tool1', 'tool2']
-        mock_manager.sessions = {'server1': None, 'server2': None}
+        mock_manager.get_server_info.return_value = {
+            'server1': {'connected': True},
+            'server2': {'connected': True}
+        }
         mock_get_manager.return_value = mock_manager
         
         result = self.runner.invoke(cli, ['mcp', 'reload'])

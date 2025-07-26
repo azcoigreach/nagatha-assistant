@@ -18,9 +18,9 @@ class TestPersonality:
         assert isinstance(prompt, str)
         assert len(prompt) > 0
         assert "Nagatha" in prompt
-        assert "assistant" in prompt.lower()
-        # Should contain message about no MCP tools being available
-        assert "no mcp tools are available" in prompt.lower()
+        assert "communications ai" in prompt.lower()
+        # Should contain message about no specialized tools being available
+        assert "without specialized tools" in prompt.lower()
 
     def test_get_system_prompt_with_tools(self):
         """Test system prompt generation with tools."""

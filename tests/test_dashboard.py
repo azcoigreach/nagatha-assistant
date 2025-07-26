@@ -195,9 +195,9 @@ class TestResourceMonitor:
         with patch('nagatha_assistant.ui.widgets.resource_monitor.load_usage') as mock_load:
             mock_load.return_value = {
                 "gpt-4o": {
-                    "input_tokens": 1000,
-                    "output_tokens": 500,
-                    "cost": 0.025,
+                    "prompt_tokens": 1000,
+                    "completion_tokens": 500,
+                    "cost_usd": 0.025,
                     "requests": 5
                 }
             }
