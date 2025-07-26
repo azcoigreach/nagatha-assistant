@@ -827,7 +827,6 @@ class ContextualRecall:
                         timestamp_str = value[timestamp_field]
                         if isinstance(timestamp_str, str):
                             # Convert ISO timestamp to float for sorting
-                            from datetime import datetime
                             try:
                                 dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
                                 return dt.timestamp()

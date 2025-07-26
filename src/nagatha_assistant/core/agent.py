@@ -28,6 +28,9 @@ client = AsyncOpenAI(
 # Push notification pub/sub for UIs and other listeners
 _push_callbacks: Dict[int, List[Callable[[Message], Awaitable[None]]]] = {}
 
+# Background task for autonomous memory maintenance
+_memory_maintenance_task: Optional[asyncio.Task] = None
+
 def subscribe_session(session_id: int, callback: Callable[[Message], Awaitable[None]]) -> None:
     """Register a coroutine callback to receive new messages for a session."""
     _push_callbacks.setdefault(session_id, []).append(callback)
@@ -114,9 +117,11 @@ async def startup() -> Dict[str, Any]:
         await ensure_memory_manager_started()
         logger.info("Memory manager started")
         
-        # Start autonomous memory maintenance task
-        asyncio.create_task(_autonomous_memory_maintenance_loop())
-        logger.info("Autonomous memory maintenance started")
+        # Start autonomous memory maintenance task (only in production)
+        if not os.getenv("TESTING"):
+            global _memory_maintenance_task
+            _memory_maintenance_task = asyncio.create_task(_autonomous_memory_maintenance_loop())
+            logger.info("Autonomous memory maintenance started")
         
     except Exception as e:
         logger.exception(f"Error starting memory manager: {e}")
@@ -160,6 +165,16 @@ async def shutdown() -> None:
         await shutdown_plugin_manager()
     except Exception as e:
         logging.exception(f"Error shutting down plugins: {e}")
+    
+    # Cancel memory maintenance task (only if it exists)
+    global _memory_maintenance_task
+    if _memory_maintenance_task and not _memory_maintenance_task.done():
+        _memory_maintenance_task.cancel()
+        try:
+            await _memory_maintenance_task
+        except asyncio.CancelledError:
+            pass
+        logging.info("Memory maintenance task cancelled")
     
     # Shutdown memory manager
     try:
