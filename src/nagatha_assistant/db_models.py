@@ -170,3 +170,22 @@ class MemoryEntry(Base):
         # For session-scoped memory, key must be unique within section and session
         # For global memory, key must be unique within section
     )
+
+
+# ---------------------------------------------------------------------------
+# Discord Auto-Chat Configuration models
+# ---------------------------------------------------------------------------
+
+class DiscordAutoChat(Base):
+    """Represents auto-chat configuration for Discord channels/DMs."""
+    __tablename__ = "discord_auto_chat"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    channel_id = Column(String(255), unique=True, nullable=False, index=True)  # Discord channel/DM ID
+    guild_id = Column(String(255), nullable=True, index=True)  # Discord guild ID (null for DMs)
+    enabled = Column(Boolean, nullable=False, server_default="0")  # Auto-chat enabled/disabled
+    enabled_by_user_id = Column(String(255), nullable=False)  # Discord user ID who enabled it
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    last_message_at = Column(DateTime(timezone=True), nullable=True)  # For rate limiting
+    message_count = Column(Integer, nullable=False, server_default="0")  # Daily message count for rate limiting

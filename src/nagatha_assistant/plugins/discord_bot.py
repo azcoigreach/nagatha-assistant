@@ -9,6 +9,7 @@ import os
 import logging
 import asyncio
 from typing import Any, Dict, Optional, List
+from datetime import datetime, timedelta
 
 import discord
 from discord.ext import commands
@@ -19,8 +20,95 @@ from nagatha_assistant.core.event import Event, StandardEventTypes, create_syste
 from nagatha_assistant.core.slash_command_manager import SlashCommandManager
 from nagatha_assistant.core.slash_commands import ChatSlashCommand, StatusSlashCommand, HelpSlashCommand
 from nagatha_assistant.utils.logger import setup_logger_with_env_control
+from nagatha_assistant.db_models import DiscordAutoChat
+from nagatha_assistant.db import SessionLocal
 
 logger = setup_logger_with_env_control()
+
+
+# Helper functions for auto-chat management
+async def get_auto_chat_setting(channel_id: str, guild_id: Optional[str] = None) -> Optional[DiscordAutoChat]:
+    """Get auto-chat setting for a channel."""
+    async with SessionLocal() as session:
+        from sqlalchemy import select
+        stmt = select(DiscordAutoChat).where(DiscordAutoChat.channel_id == str(channel_id))
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+
+
+async def set_auto_chat_setting(channel_id: str, guild_id: Optional[str], enabled: bool, user_id: str) -> DiscordAutoChat:
+    """Set auto-chat setting for a channel."""
+    async with SessionLocal() as session:
+        from sqlalchemy import select
+        
+        # Check if setting already exists
+        stmt = select(DiscordAutoChat).where(DiscordAutoChat.channel_id == str(channel_id))
+        result = await session.execute(stmt)
+        setting = result.scalar_one_or_none()
+        
+        if setting:
+            # Update existing setting
+            setting.enabled = enabled
+            setting.enabled_by_user_id = str(user_id)
+            setting.updated_at = datetime.now()
+        else:
+            # Create new setting
+            setting = DiscordAutoChat(
+                channel_id=str(channel_id),
+                guild_id=str(guild_id) if guild_id else None,
+                enabled=enabled,
+                enabled_by_user_id=str(user_id)
+            )
+            session.add(setting)
+        
+        await session.commit()
+        await session.refresh(setting)
+        return setting
+
+
+async def is_auto_chat_enabled(channel_id: str) -> bool:
+    """Check if auto-chat is enabled for a channel."""
+    setting = await get_auto_chat_setting(str(channel_id))
+    return setting is not None and setting.enabled
+
+
+async def should_rate_limit(channel_id: str, max_messages_per_hour: int = 20) -> bool:
+    """Check if we should rate limit auto-chat responses."""
+    setting = await get_auto_chat_setting(str(channel_id))
+    if not setting:
+        return True
+    
+    # Reset daily counter if it's a new day
+    now = datetime.now()
+    if setting.last_message_at and setting.last_message_at.date() < now.date():
+        async with SessionLocal() as session:
+            setting.message_count = 0
+            setting.last_message_at = now
+            session.add(setting)
+            await session.commit()
+    
+    # Check hourly rate limit
+    if setting.last_message_at:
+        hour_ago = now - timedelta(hours=1)
+        if setting.last_message_at > hour_ago and setting.message_count >= max_messages_per_hour:
+            return True
+    
+    return False
+
+
+async def update_auto_chat_usage(channel_id: str):
+    """Update auto-chat usage statistics."""
+    async with SessionLocal() as session:
+        from sqlalchemy import select
+        
+        stmt = select(DiscordAutoChat).where(DiscordAutoChat.channel_id == str(channel_id))
+        result = await session.execute(stmt)
+        setting = result.scalar_one_or_none()
+        
+        if setting:
+            setting.message_count += 1
+            setting.last_message_at = datetime.now()
+            await session.commit()
 
 
 class NagathaDiscordBot(commands.Bot):
@@ -41,24 +129,38 @@ class NagathaDiscordBot(commands.Bot):
         logger.info(f'Discord bot logged in as {self.user} (ID: {self.user.id})')
         logger.info(f'Connected to {len(self.guilds)} guild(s): {[guild.name for guild in self.guilds]}')
         
+        # Debug: Check what commands are registered
+        registered_commands = [cmd.name for cmd in self.tree.get_commands()]
+        logger.info(f"Registered commands in tree: {registered_commands}")
+        
         # Sync slash commands
         try:
             # Sync globally or to specific guild
             guild_id = self.discord_plugin.guild_id
+            logger.info(f"Attempting to sync commands with guild_id: {guild_id}")
+            
             if guild_id:
                 guild = self.get_guild(int(guild_id))
                 if guild:
+                    logger.info(f"Found guild: {guild.name} (ID: {guild.id})")
                     synced = await self.tree.sync(guild=guild)
                     logger.info(f"Synced {len(synced)} slash commands to guild {guild.name}")
+                    for cmd in synced:
+                        logger.info(f"  - Synced command: {cmd.name}")
                 else:
                     logger.warning(f"Guild with ID {guild_id} not found, syncing globally")
                     synced = await self.tree.sync()
                     logger.info(f"Synced {len(synced)} slash commands globally")
             else:
+                logger.info("No guild_id specified, syncing globally")
                 synced = await self.tree.sync()
                 logger.info(f"Synced {len(synced)} slash commands globally")
+                for cmd in synced:
+                    logger.info(f"  - Synced command: {cmd.name}")
         except Exception as e:
             logger.error(f"Failed to sync slash commands: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
         
         # Publish bot ready event
         event = create_system_event(
@@ -106,8 +208,12 @@ class NagathaDiscordBot(commands.Bot):
         This is where we can integrate with Nagatha's conversation system
         to provide AI responses to Discord messages.
         """
-        # Don't respond to ourselves
-        if message.author == self.user:
+        # Don't respond to ourselves or other bots
+        if message.author == self.user or message.author.bot:
+            return
+        
+        # Skip system messages
+        if message.type != discord.MessageType.default:
             return
         
         # Log the message
@@ -130,8 +236,91 @@ class NagathaDiscordBot(commands.Bot):
         )
         await self.discord_plugin.publish_event(event)
         
-        # Process commands
+        # Check if auto-chat is enabled for this channel
+        try:
+            if await is_auto_chat_enabled(str(message.channel.id)):
+                # Check rate limiting
+                if await should_rate_limit(str(message.channel.id)):
+                    logger.debug(f"Rate limiting auto-chat in channel {message.channel.id}")
+                    return
+                
+                # Process the message as an auto-chat
+                await self._handle_auto_chat_message(message)
+            
+        except Exception as e:
+            logger.error(f"Error in auto-chat handling: {e}")
+        
+        # Process commands (this will handle slash commands and prefix commands)
         await self.process_commands(message)
+    
+    async def _handle_auto_chat_message(self, message: discord.Message):
+        """Handle auto-chat message processing."""
+        try:
+            # Import here to avoid circular imports
+            from ..core.agent import send_message, start_session
+            
+            # Create or get user session (use channel ID as a unique session identifier)
+            session_id = await start_session()
+            
+            # Get AI response
+            response = await send_message(session_id, message.content)
+            
+            # Update usage statistics
+            await update_auto_chat_usage(str(message.channel.id))
+            
+            # Send response to Discord
+            await self._send_long_message(message.channel, response)
+            
+            logger.info(f"Auto-chat response sent in channel {message.channel.id}")
+            
+        except Exception as e:
+            logger.exception(f"Error in auto-chat message handling: {e}")
+            # Send error message to channel
+            try:
+                await message.channel.send("❌ Sorry, I encountered an error processing your message.")
+            except Exception as send_error:
+                logger.error(f"Failed to send error message: {send_error}")
+    
+    async def _send_long_message(self, channel, content: str):
+        """Send a message that might be longer than Discord's limit."""
+        # Discord limit is 2000 characters
+        if len(content) <= 2000:
+            await channel.send(content)
+        else:
+            # Split long messages
+            parts = []
+            current_part = ""
+            
+            # Split by lines first to avoid breaking words
+            lines = content.split('\n')
+            for line in lines:
+                # If adding this line would exceed limit, send current part
+                if len(current_part) + len(line) + 1 > 1950:  # Leave some margin
+                    if current_part:
+                        parts.append(current_part)
+                        current_part = line
+                    else:
+                        # Line itself is too long, split it
+                        while len(line) > 1950:
+                            parts.append(line[:1950])
+                            line = line[1950:]
+                        current_part = line
+                else:
+                    if current_part:
+                        current_part += '\n' + line
+                    else:
+                        current_part = line
+            
+            # Add the last part
+            if current_part:
+                parts.append(current_part)
+            
+            # Send all parts
+            for i, part in enumerate(parts):
+                if i == 0:
+                    await channel.send(part)
+                else:
+                    await channel.send(f"**(continued...)**\n{part}")
 
 
 class DiscordBotPlugin(SimplePlugin):
@@ -420,12 +609,30 @@ class DiscordBotPlugin(SimplePlugin):
             async def help_command(interaction: discord.Interaction):
                 await self._handle_help_command(interaction)
             
+            # Auto-chat command
+            @app_commands.command(name="auto-chat", description="Enable or disable auto-chat mode for this channel")
+            @app_commands.describe(
+                action="Turn auto-chat on or off",
+            )
+            @app_commands.choices(action=[
+                app_commands.Choice(name="on", value="on"),
+                app_commands.Choice(name="off", value="off"),
+                app_commands.Choice(name="status", value="status")
+            ])
+            async def auto_chat_command(interaction: discord.Interaction, action: str):
+                await self._handle_auto_chat_command(interaction, action)
+            
             # Register commands with the bot tree
+            logger.info("Adding commands to bot tree...")
             self.bot.tree.add_command(chat_command)
             self.bot.tree.add_command(status_command)
             self.bot.tree.add_command(help_command)
+            self.bot.tree.add_command(auto_chat_command)
             
-            logger.info("Registered legacy slash commands: chat, status, help")
+            # Verify commands were added
+            registered_commands = [cmd.name for cmd in self.bot.tree.get_commands()]
+            logger.info(f"Commands in tree after registration: {registered_commands}")
+            logger.info("Registered legacy slash commands: chat, status, help, auto-chat")
             
         except Exception as e:
             logger.error(f"Error registering legacy slash commands: {e}")
@@ -526,6 +733,7 @@ class DiscordBotPlugin(SimplePlugin):
             response = "🤖 **Nagatha Assistant Commands**\n\n"
             response += "**Available Slash Commands:**\n"
             response += "• `/chat <message> [private]` - Chat with Nagatha AI assistant\n"
+            response += "• `/auto-chat <on|off|status>` - Enable/disable auto-chat mode for this channel\n"
             response += "• `/status` - Get system status and plugin information\n" 
             response += "• `/help` - Show this help message\n\n"
             
@@ -535,8 +743,9 @@ class DiscordBotPlugin(SimplePlugin):
             
             response += "**Getting Started:**\n"
             response += "1. Use `/chat` to have conversations with Nagatha\n"
-            response += "2. Check `/status` to see what tools and plugins are available\n"
-            response += "3. Nagatha can help with notes, tasks, web research, and more!\n\n"
+            response += "2. Use `/auto-chat on` to enable automatic responses in this channel\n"
+            response += "3. Check `/status` to see what tools and plugins are available\n"
+            response += "4. Nagatha can help with notes, tasks, web research, and more!\n\n"
             
             response += "*More commands may be available from other plugins and MCP servers.*"
             
@@ -546,6 +755,98 @@ class DiscordBotPlugin(SimplePlugin):
             logger.exception(f"Error in help command: {e}")
             await interaction.followup.send(
                 f"❌ Error getting help: {str(e)}"
+            )
+    
+    async def _handle_auto_chat_command(self, interaction: discord.Interaction, action: str):
+        """Handle the /auto-chat slash command."""
+        await interaction.response.defer()
+        
+        try:
+            channel_id = str(interaction.channel_id)
+            guild_id = str(interaction.guild_id) if interaction.guild_id else None
+            user_id = str(interaction.user.id)
+            
+            if action == "status":
+                # Get current status
+                setting = await get_auto_chat_setting(channel_id)
+                if setting and setting.enabled:
+                    response = f"✅ **Auto-chat is ENABLED** in this channel\n"
+                    response += f"• Enabled by: <@{setting.enabled_by_user_id}>\n"
+                    response += f"• Messages today: {setting.message_count}\n"
+                    if setting.last_message_at:
+                        response += f"• Last response: <t:{int(setting.last_message_at.timestamp())}:R>\n"
+                else:
+                    response = "❌ **Auto-chat is DISABLED** in this channel"
+                
+                await interaction.followup.send(response)
+                return
+            
+            elif action == "on":
+                # Check permissions - only admins or channel owners can enable auto-chat
+                if interaction.guild:
+                    # In guilds, check for manage_channel permission
+                    if not interaction.user.guild_permissions.manage_channels:
+                        await interaction.followup.send(
+                            "❌ You need 'Manage Channels' permission to enable auto-chat in this server.",
+                            ephemeral=True
+                        )
+                        return
+                # For DMs, anyone can enable auto-chat
+                
+                # Enable auto-chat
+                setting = await set_auto_chat_setting(channel_id, guild_id, True, user_id)
+                
+                response = "✅ **Auto-chat ENABLED!** 🎉\n\n"
+                response += "Nagatha will now automatically respond to all messages in this channel.\n\n"
+                response += "**Features:**\n"
+                response += "• Natural conversation without `/chat` commands\n"
+                response += "• Rate limited to prevent spam (20 messages/hour)\n"
+                response += "• Ignores bot messages and system messages\n\n"
+                response += "Use `/auto-chat off` to disable or `/auto-chat status` to check usage."
+                
+                await interaction.followup.send(response)
+                
+                logger.info(f"Auto-chat enabled in channel {channel_id} by user {user_id}")
+                
+            elif action == "off":
+                # Check permissions - only the user who enabled it or admins can disable
+                current_setting = await get_auto_chat_setting(channel_id)
+                if current_setting and current_setting.enabled:
+                    can_disable = False
+                    
+                    # User who enabled it can always disable
+                    if current_setting.enabled_by_user_id == user_id:
+                        can_disable = True
+                    # Admins can disable
+                    elif interaction.guild and interaction.user.guild_permissions.manage_channels:
+                        can_disable = True
+                    # In DMs, anyone can disable
+                    elif not interaction.guild:
+                        can_disable = True
+                    
+                    if not can_disable:
+                        await interaction.followup.send(
+                            "❌ You can only disable auto-chat if you enabled it or have 'Manage Channels' permission.",
+                            ephemeral=True
+                        )
+                        return
+                
+                # Disable auto-chat
+                await set_auto_chat_setting(channel_id, guild_id, False, user_id)
+                
+                response = "🔕 **Auto-chat DISABLED**\n\n"
+                response += "Nagatha will no longer automatically respond to messages.\n"
+                response += "You can still use `/chat` for individual conversations."
+                
+                await interaction.followup.send(response)
+                
+                logger.info(f"Auto-chat disabled in channel {channel_id} by user {user_id}")
+            
+        except Exception as e:
+            logger.exception(f"Error in auto-chat command: {e}")
+            await interaction.followup.send(
+                f"❌ Error managing auto-chat: {str(e)}", 
+                ephemeral=True
             )
     
     def add_slash_command(self, name: str, description: str, handler: callable, **kwargs) -> bool:

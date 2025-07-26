@@ -44,7 +44,7 @@ class TestDiscordSlashCommands:
         discord_plugin._register_legacy_slash_commands()
         
         # Verify commands were added to the tree
-        assert mock_bot.tree.add_command.call_count == 3  # chat, status, help
+        assert mock_bot.tree.add_command.call_count == 4  # chat, status, help, auto-chat
         
         # Check that the calls include the expected command names
         call_args = [call.args[0] for call in mock_bot.tree.add_command.call_args_list]
@@ -53,6 +53,7 @@ class TestDiscordSlashCommands:
         assert "chat" in command_names
         assert "status" in command_names  
         assert "help" in command_names
+        assert "auto-chat" in command_names
     
     @pytest.mark.asyncio
     async def test_chat_slash_command(self, discord_plugin):
