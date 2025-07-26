@@ -22,7 +22,7 @@ def load_requirements() -> list[str]:
 
 setup(
     name="nagatha_assistant",
-    version="0.8.0",
+    version="0.9.0",
     description="A personal AI assistant using OpenAI",
     author="AZcoigreach",
     author_email="azcoigreach@gmail.com",
