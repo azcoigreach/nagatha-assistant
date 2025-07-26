@@ -25,9 +25,13 @@ async def test_send_message_stores_history(monkeypatch):
         calls['model'] = model
         calls['messages'] = list(messages)
         # Fake response structure
+        class Message:
+            def __init__(self):
+                self.role = 'assistant'
+                self.content = 'fake reply'
         class Choice:
             def __init__(self):
-                self.message = {'role': 'assistant', 'content': 'fake reply'}
+                self.message = Message()
         class Response:
             def __init__(self):
                 self.choices = [Choice()]
