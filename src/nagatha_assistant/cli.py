@@ -948,5 +948,260 @@ def dashboard():
     asyncio.run(_run_dashboard_with_lifecycle())
 
 
+@cli.group()
+def scheduler():
+    """
+    Task scheduler management commands.
+    """
+    pass
+
+
+@scheduler.command("schedule")
+@click.argument("task_type", type=click.Choice(["mcp_tool", "plugin_command", "notification", "shell_command"]))
+@click.argument("schedule_spec")
+@click.option("--name", help="Optional name for the task")
+@click.option("--description", help="Optional description of the task")
+@click.option("--server-name", help="MCP server name (for mcp_tool)")
+@click.option("--tool-name", help="MCP tool name (for mcp_tool)")
+@click.option("--plugin-name", help="Plugin name (for plugin_command)")
+@click.option("--command-name", help="Command name (for plugin_command)")
+@click.option("--message", help="Message content (for notification)")
+@click.option("--command", help="Shell command to execute (for shell_command)")
+@click.option("--args", help="JSON-encoded arguments for the task")
+def schedule_task(task_type, schedule_spec, name, description, server_name, tool_name, 
+                 plugin_name, command_name, message, command, args):
+    """
+    Schedule a task for execution.
+    
+    TASK_TYPE: Type of task (mcp_tool, plugin_command, notification, shell_command)
+    SCHEDULE_SPEC: When to run the task (cron expression, natural language, or ISO datetime)
+    
+    Examples:
+    
+    \b
+    # Schedule an MCP tool call
+    nagatha scheduler schedule mcp_tool "in 30 minutes" --server-name time --tool-name get_current_time
+    
+    \b
+    # Schedule a notification
+    nagatha scheduler schedule notification "0 9 * * *" --message "Daily reminder"
+    
+    \b
+    # Schedule a plugin command
+    nagatha scheduler schedule plugin_command "tomorrow at 2pm" --plugin-name echo --command-name echo --args '{"text": "Hello"}'
+    """
+    async def _schedule():
+        from nagatha_assistant.plugins.scheduler import get_scheduler
+        from nagatha_assistant.core.event_bus import ensure_event_bus_started
+        
+        # Start event bus
+        await ensure_event_bus_started()
+        
+        scheduler = get_scheduler()
+        
+        # Parse arguments
+        task_args = {}
+        if args:
+            try:
+                task_args.update(json.loads(args))
+            except json.JSONDecodeError as e:
+                click.echo(f"Invalid JSON in --args: {e}", err=True)
+                return
+        
+        # Set up task-specific arguments
+        if task_type == "mcp_tool":
+            if not server_name or not tool_name:
+                click.echo("mcp_tool requires --server-name and --tool-name", err=True)
+                return
+            task_args.update({
+                "server_name": server_name,
+                "tool_name": tool_name,
+                "arguments": task_args.get("arguments", {})
+            })
+        elif task_type == "plugin_command":
+            if not plugin_name or not command_name:
+                click.echo("plugin_command requires --plugin-name and --command-name", err=True)
+                return
+            task_args.update({
+                "plugin_name": plugin_name,
+                "command_name": command_name,
+                "arguments": task_args.get("arguments", {})
+            })
+        elif task_type == "notification":
+            if not message:
+                click.echo("notification requires --message", err=True)
+                return
+            task_args.update({
+                "message": message,
+                "notification_type": task_args.get("notification_type", "info")
+            })
+        elif task_type == "shell_command":
+            if not command:
+                click.echo("shell_command requires --command", err=True)
+                return
+            task_args.update({
+                "command": command
+            })
+        
+        try:
+            task_id = await scheduler.schedule_task(
+                task_type=task_type,
+                task_args=task_args,
+                schedule_spec=schedule_spec,
+                task_name=name,
+                description=description
+            )
+            click.echo(f"✅ Task scheduled successfully with ID: {task_id}")
+            
+            # Show task info
+            task_info = scheduler.get_task_info(task_id)
+            if task_info:
+                click.echo(f"Task Type: {task_info['task_type']}")
+                click.echo(f"Schedule Type: {task_info['schedule_type']}")
+                if task_info.get('name'):
+                    click.echo(f"Name: {task_info['name']}")
+                if task_info.get('description'):
+                    click.echo(f"Description: {task_info['description']}")
+                
+        except Exception as e:
+            click.echo(f"❌ Failed to schedule task: {e}", err=True)
+            logger.exception("Failed to schedule task")
+    
+    logger = setup_logger()
+    asyncio.run(_schedule())
+
+
+@scheduler.command("list")
+@click.option("--status", type=click.Choice(["scheduled", "running", "completed", "failed", "cancelled"]), 
+              help="Filter tasks by status")
+@click.option("--format", "output_format", type=click.Choice(["table", "json"]), default="table",
+              help="Output format")
+def list_tasks(status, output_format):
+    """
+    List scheduled tasks.
+    """
+    async def _list():
+        from nagatha_assistant.plugins.scheduler import get_scheduler
+        from nagatha_assistant.core.event_bus import ensure_event_bus_started
+        
+        # Start event bus
+        await ensure_event_bus_started()
+        
+        scheduler = get_scheduler()
+        tasks = scheduler.get_scheduled_tasks(status_filter=status)
+        
+        if not tasks:
+            click.echo("No scheduled tasks found.")
+            return
+        
+        if output_format == "json":
+            click.echo(json.dumps(tasks, indent=2, default=str))
+        else:
+            # Table format
+            click.echo(f"Found {len(tasks)} scheduled tasks:\n")
+            
+            # Header
+            click.echo(f"{'ID':<12} {'Name':<20} {'Type':<15} {'Schedule':<15} {'Status':<10}")
+            click.echo("-" * 80)
+            
+            # Tasks
+            for task in tasks:
+                task_id = task["task_id"][:10] + "..." if len(task["task_id"]) > 10 else task["task_id"]
+                name = task.get("name", task["task_type"])[:18] + "..." if len(task.get("name", task["task_type"])) > 18 else task.get("name", task["task_type"])
+                task_type = task["task_type"][:13] + "..." if len(task["task_type"]) > 13 else task["task_type"]
+                schedule_type = task["schedule_type"][:13] + "..." if len(task["schedule_type"]) > 13 else task["schedule_type"]
+                status = task["status"]
+                
+                click.echo(f"{task_id:<12} {name:<20} {task_type:<15} {schedule_type:<15} {status:<10}")
+    
+    logger = setup_logger()
+    asyncio.run(_list())
+
+
+@scheduler.command("info")
+@click.argument("task_id")
+def task_info(task_id):
+    """
+    Show detailed information about a scheduled task.
+    """
+    async def _info():
+        from nagatha_assistant.plugins.scheduler import get_scheduler
+        from nagatha_assistant.core.event_bus import ensure_event_bus_started
+        
+        # Start event bus
+        await ensure_event_bus_started()
+        
+        scheduler = get_scheduler()
+        task_info = scheduler.get_task_info(task_id)
+        
+        if not task_info:
+            click.echo(f"Task {task_id} not found.", err=True)
+            return
+        
+        click.echo(f"Task Information: {task_id}\n")
+        click.echo(f"Name: {task_info.get('name', 'N/A')}")
+        click.echo(f"Description: {task_info.get('description', 'N/A')}")
+        click.echo(f"Type: {task_info['task_type']}")
+        click.echo(f"Schedule Type: {task_info['schedule_type']}")
+        click.echo(f"Status: {task_info['status']}")
+        click.echo(f"Created: {task_info['created_at']}")
+        
+        if task_info.get('eta'):
+            click.echo(f"ETA: {task_info['eta']}")
+        if task_info.get('schedule'):
+            click.echo(f"Schedule: {task_info['schedule']}")
+        if task_info.get('cancelled_at'):
+            click.echo(f"Cancelled: {task_info['cancelled_at']}")
+        
+        click.echo(f"\nTask Arguments:")
+        click.echo(json.dumps(task_info['task_args'], indent=2))
+    
+    logger = setup_logger()
+    asyncio.run(_info())
+
+
+@scheduler.command("cancel")
+@click.argument("task_id")
+@click.option("--confirm", is_flag=True, help="Confirm cancellation")
+def cancel_task(task_id, confirm):
+    """
+    Cancel a scheduled task.
+    """
+    async def _cancel():
+        from nagatha_assistant.plugins.scheduler import get_scheduler
+        from nagatha_assistant.core.event_bus import ensure_event_bus_started
+        
+        # Start event bus
+        await ensure_event_bus_started()
+        
+        scheduler = get_scheduler()
+        
+        if not confirm:
+            task_info = scheduler.get_task_info(task_id)
+            if not task_info:
+                click.echo(f"Task {task_id} not found.", err=True)
+                return
+            
+            click.echo(f"Task: {task_info.get('name', task_info['task_type'])}")
+            click.echo(f"Status: {task_info['status']}")
+            
+            if not click.confirm("Are you sure you want to cancel this task?"):
+                click.echo("Cancellation aborted.")
+                return
+        
+        try:
+            cancelled = await scheduler.cancel_task(task_id)
+            if cancelled:
+                click.echo(f"✅ Task {task_id} cancelled successfully.")
+            else:
+                click.echo(f"❌ Task {task_id} not found or could not be cancelled.", err=True)
+        except Exception as e:
+            click.echo(f"❌ Failed to cancel task: {e}", err=True)
+            logger.exception("Failed to cancel task")
+    
+    logger = setup_logger()
+    asyncio.run(_cancel())
+
+
 if __name__ == "__main__":
     cli()

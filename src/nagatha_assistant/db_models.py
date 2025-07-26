@@ -189,3 +189,72 @@ class DiscordAutoChat(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     last_message_at = Column(DateTime(timezone=True), nullable=True)  # For rate limiting
     message_count = Column(Integer, nullable=False, server_default="0")  # Daily message count for rate limiting
+
+
+# ---------------------------------------------------------------------------
+# Scheduled Task models
+# ---------------------------------------------------------------------------
+
+class ScheduledTask(Base):
+    """Represents a scheduled task in the task scheduler."""
+    __tablename__ = "scheduled_tasks"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(String(255), unique=True, nullable=False, index=True)  # Celery task ID
+    task_type = Column(String(100), nullable=False, index=True)  # Type of task (mcp_tool, plugin_command, etc.)
+    task_name = Column(String(255), nullable=True, index=True)  # Human-readable task name
+    description = Column(Text, nullable=True)  # Task description
+    
+    # Task configuration
+    task_args = Column(Text, nullable=False)  # JSON-encoded task arguments
+    schedule_type = Column(String(50), nullable=False)  # one_time, recurring
+    schedule_spec = Column(String(255), nullable=False)  # Cron expression or datetime
+    
+    # Status tracking
+    status = Column(String(50), nullable=False, server_default="scheduled")  # scheduled, running, completed, failed, cancelled
+    
+    # Execution tracking
+    last_run_at = Column(DateTime(timezone=True), nullable=True)
+    next_run_at = Column(DateTime(timezone=True), nullable=True)
+    run_count = Column(Integer, nullable=False, server_default="0")
+    max_runs = Column(Integer, nullable=True)  # For one-time tasks or limited runs
+    
+    # Error handling
+    retry_count = Column(Integer, nullable=False, server_default="0")
+    max_retries = Column(Integer, nullable=False, server_default="3")
+    last_error = Column(Text, nullable=True)
+    
+    # Metadata
+    created_by = Column(String(255), nullable=True)  # User or system that created the task
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    executions = relationship("TaskExecution", back_populates="scheduled_task", cascade="all, delete-orphan")
+
+
+class TaskExecution(Base):
+    """Represents an execution of a scheduled task."""
+    __tablename__ = "task_executions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    scheduled_task_id = Column(Integer, ForeignKey("scheduled_tasks.id", ondelete="CASCADE"), nullable=False)
+    execution_id = Column(String(255), nullable=True, index=True)  # Celery execution ID
+    
+    # Execution details
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String(50), nullable=False)  # running, completed, failed, cancelled
+    
+    # Results
+    result = Column(Text, nullable=True)  # JSON-encoded execution result
+    error_message = Column(Text, nullable=True)
+    error_traceback = Column(Text, nullable=True)
+    
+    # Performance metrics
+    duration_seconds = Column(Integer, nullable=True)
+    memory_usage_mb = Column(Integer, nullable=True)
+    cpu_usage_percent = Column(Integer, nullable=True)
+    
+    # Relationships
+    scheduled_task = relationship("ScheduledTask", back_populates="executions")

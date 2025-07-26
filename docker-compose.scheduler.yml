@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: nagatha-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      timeout: 3s
+      interval: 5s
+      retries: 5
+    networks:
+      - nagatha-network
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.celery
+    container_name: nagatha-celery-worker
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - PYTHONPATH=/app/src
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    command: celery -A nagatha_assistant.plugins.celery_app worker --loglevel=info --queues=nagatha_tasks,nagatha_plugins
+    networks:
+      - nagatha-network
+    restart: unless-stopped
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.celery
+    container_name: nagatha-celery-beat
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - PYTHONPATH=/app/src
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+      - beat_schedule:/app/beat_schedule
+    command: celery -A nagatha_assistant.plugins.celery_app beat --loglevel=info --schedule=/app/beat_schedule/celerybeat-schedule
+    networks:
+      - nagatha-network
+    restart: unless-stopped
+
+  celery-flower:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.celery
+    container_name: nagatha-celery-flower
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - PYTHONPATH=/app/src
+    volumes:
+      - .:/app
+    ports:
+      - "5555:5555"
+    command: celery -A nagatha_assistant.plugins.celery_app flower --port=5555
+    networks:
+      - nagatha-network
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+    driver: local
+  beat_schedule:
+    driver: local
+
+networks:
+  nagatha-network:
+    driver: bridge
