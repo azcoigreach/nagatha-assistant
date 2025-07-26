@@ -1110,9 +1110,9 @@ def list_tasks(status, output_format):
                 name = task.get("name", task["task_type"])[:18] + "..." if len(task.get("name", task["task_type"])) > 18 else task.get("name", task["task_type"])
                 task_type = task["task_type"][:13] + "..." if len(task["task_type"]) > 13 else task["task_type"]
                 schedule_type = task["schedule_type"][:13] + "..." if len(task["schedule_type"]) > 13 else task["schedule_type"]
-                status = task["status"]
+                task_status = task["status"]
                 
-                click.echo(f"{task_id:<12} {name:<20} {task_type:<15} {schedule_type:<15} {status:<10}")
+                click.echo(f"{task_id:<12} {name:<20} {task_type:<15} {schedule_type:<15} {task_status:<10}")
     
     logger = setup_logger()
     asyncio.run(_list())
