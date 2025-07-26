@@ -10,12 +10,15 @@ Nagatha Assistant is a powerful, modular personal AI agent built in Python that 
 - **📋 Task & Reminder System**: Complete task management with priorities, due dates, and automated notifications
 - **🔍 Web Research**: Advanced web scraping, searching, and content analysis via MCP tools
 - **🐘 Mastodon Integration**: User profile analysis and moderation tools for Mastodon instances
-- **🤖 Discord Bot**: Native Discord integration for AI assistance in Discord servers
-- **💬 Multiple Interfaces**: Command-line, Textual UI, Discord, and programmatic API access
-- **📊 Usage Tracking**: Automatic token usage and cost monitoring
+- **🤖 Discord Bot**: Native Discord integration with slash commands and plugin extensibility
+- **💬 Multiple Interfaces**: Command-line, Textual UI, Dashboard UI, Discord, and programmatic API access
+- **📊 Usage Tracking**: Automatic token usage and cost monitoring with reset functionality
 - **🗄️ Database Management**: SQLite with Alembic migrations for schema versioning
 - **🧠 Persistent Memory System**: Cross-session storage with user preferences, facts, command history, and TTL support
 - **📈 Background Processing**: Automated scheduler for reminders and notifications
+- **🔌 Plugin System**: Extensible plugin architecture with event-driven communication
+- **📡 Event Bus**: Centralized event system for component communication and monitoring
+- **🎛️ Dashboard UI**: Enhanced multi-panel interface with real-time monitoring and resource tracking
 
 ## 🏗️ Architecture
 
@@ -27,9 +30,22 @@ src/nagatha_assistant/
 ├── core/                  # Core system components
 │   ├── agent.py          # Main AI agent and conversation handling
 │   ├── mcp_manager.py    # MCP server connections and tool management
+│   ├── plugin_manager.py # Plugin lifecycle and dependency management
+│   ├── plugin.py         # Plugin base classes and interfaces
+│   ├── event_bus.py      # Centralized event communication system
+│   ├── event.py          # Event types and creation utilities
+│   ├── memory.py         # Persistent memory system
+│   ├── storage.py        # Storage backend abstractions
 │   └── personality.py    # Nagatha's character and system prompts
-├── db.py                 # Database configuration and connection management
-├── db_models.py          # SQLAlchemy models for all entities
+├── plugins/              # Built-in and extensible plugins
+│   ├── discord_bot.py    # Discord bot integration
+│   ├── memory.py         # Memory system plugin
+│   ├── echo_plugin.py    # Example plugin
+│   └── example_slash_commands.py # Discord slash command examples
+├── ui/                   # User interface components
+│   ├── dashboard.py      # Enhanced dashboard UI
+│   ├── widgets/          # Dashboard widget components
+│   └── ui.py             # Original Textual UI
 ├── modules/              # Feature modules (notes, tasks, reminders)
 │   ├── notes.py
 │   ├── tasks.py
@@ -108,7 +124,10 @@ src/nagatha_assistant/
 
 6. **Start Nagatha:**
    ```bash
-   # Launch the interactive Textual UI
+   # Launch the enhanced Dashboard UI (recommended)
+   nagatha dashboard
+
+   # OR launch the interactive Textual UI
    nagatha run
 
    # OR start the core server (for API access)
@@ -116,6 +135,30 @@ src/nagatha_assistant/
    ```
 
 ## 💬 Usage
+
+### Enhanced Dashboard UI (Recommended)
+
+The Dashboard UI provides a comprehensive multi-panel interface with real-time monitoring:
+
+```bash
+nagatha dashboard
+```
+
+**Dashboard Features:**
+- **Multi-Panel Layout**: Status, command interface, notifications, and resource monitoring
+- **Real-Time Updates**: Live system status, MCP server monitoring, resource usage
+- **Enhanced Commands**: Command history, auto-suggestions, system commands
+- **Resource Monitoring**: CPU, memory, disk usage, token costs, database statistics
+- **Keyboard Navigation**: Comprehensive shortcuts for all functions
+
+**Dashboard Commands:**
+- `/help` - Show all available commands and shortcuts
+- `/status` - Display detailed system status
+- `/sessions` - Open session selector
+- `/tools` - Show available MCP tools
+- `/refresh` - Refresh all dashboard data
+- `/clear` - Clear conversation area
+- `/toggle <section>` - Toggle panel visibility
 
 ### Interactive Chat (Textual UI)
 
@@ -249,7 +292,21 @@ nagatha memory clear temporary
 nagatha memory clear facts --key "old_info"
 ```
 
-For comprehensive memory system documentation, see **[docs/MEMORY_SYSTEM.md](docs/MEMORY_SYSTEM.md)**.
+#### Discord Bot Management
+```bash
+# Discord bot setup and management
+nagatha discord setup                # Interactive setup guide
+nagatha discord start                # Start the Discord bot
+nagatha discord status               # Check bot status
+nagatha discord stop                 # Stop the bot
+```
+
+For comprehensive documentation, see:
+- **[docs/MEMORY_SYSTEM.md](docs/MEMORY_SYSTEM.md)** - Memory system documentation
+- **[docs/MCP_GUIDE.md](docs/MCP_GUIDE.md)** - MCP integration guide
+- **[docs/DISCORD_SETUP.md](docs/DISCORD_SETUP.md)** - Discord bot setup
+- **[docs/DISCORD_SLASH_COMMANDS.md](docs/DISCORD_SLASH_COMMANDS.md)** - Discord slash commands
+- **[docs/EVENT_BUS_DOCS.md](docs/EVENT_BUS_DOCS.md)** - Event system documentation
 
 ### Programmatic API
 
@@ -326,6 +383,11 @@ NAGATHA_CONVERSATION_TIMEOUT=120             # Extended timeout for tool-heavy c
 # === Server Configuration ===
 NAGATHA_HOST=localhost                       # Server bind address
 NAGATHA_PORT=8000                            # Server port
+
+# === Discord Bot Configuration ===
+DISCORD_BOT_TOKEN=your_bot_token_here        # Discord bot token
+DISCORD_GUILD_ID=your_guild_id_here          # Optional: limit to specific server
+DISCORD_COMMAND_PREFIX=!                     # Command prefix (default: !)
 ```
 
 ### Database Configuration
@@ -371,7 +433,7 @@ Nagatha maintains intelligent conversation context:
 
 ### Usage Tracking
 
-Automatic monitoring of API usage and costs:
+Automatic monitoring of API usage and costs with enhanced features:
 
 ```bash
 nagatha usage
@@ -382,6 +444,8 @@ Output includes:
 - Estimated costs in USD
 - Usage trends over time
 - Model-specific breakdowns
+- Daily usage tracking
+- Reset functionality for cost management
 
 ### Task Management
 
@@ -418,9 +482,29 @@ await search_notes(tag="work")
 await search_notes("roadmap", tag="planning")
 ```
 
+### Plugin System
+
+Extensible plugin architecture with:
+
+- **Built-in Plugins**: Discord bot, memory system, echo plugin
+- **Custom Plugin Development**: Easy plugin creation and integration
+- **Event-Driven Communication**: Plugins communicate via event bus
+- **Dependency Management**: Automatic plugin dependency resolution
+- **Lifecycle Management**: Proper startup/shutdown coordination
+
+### Event Bus System
+
+Centralized event communication:
+
+- **Publish/Subscribe Pattern**: Loose coupling between components
+- **Event Priorities**: CRITICAL, HIGH, NORMAL, LOW with filtering
+- **Event History**: Configurable history with pattern filtering
+- **Async Processing**: Non-blocking event handling
+- **System Integration**: All components use event bus for communication
+
 ## 🔌 MCP Integration
 
-Nagatha leverages the Model Context Protocol for extensible tool integration. See `README_MCP.md` for comprehensive MCP documentation, including:
+Nagatha leverages the Model Context Protocol for extensible tool integration. See **[docs/MCP_GUIDE.md](docs/MCP_GUIDE.md)** for comprehensive MCP documentation, including:
 
 - Server configuration and management
 - Tool discovery and registration
@@ -438,12 +522,13 @@ Nagatha works with any MCP-compatible server:
 
 ## 🤖 Discord Bot Integration
 
-Nagatha includes a Discord bot plugin that allows you to bring AI assistant capabilities directly to your Discord servers. The bot provides:
+Nagatha includes a comprehensive Discord bot plugin that provides:
 
-- **Basic Bot Commands**: Ping, hello, and status commands
-- **Event-Driven Architecture**: Integrated with Nagatha's event system
-- **Secure Token Management**: Environment variable-based configuration
-- **Docker/Cloud Ready**: Designed for containerized deployments
+- **Slash Commands**: Modern Discord slash commands (`/chat`, `/status`, `/help`)
+- **Plugin Extensibility**: Other plugins can register custom commands
+- **MCP Integration**: Commands can utilize MCP server tools
+- **Event Integration**: Deep integration with Nagatha's event system
+- **Auto-Start Configuration**: Configurable automatic startup
 
 ### Quick Discord Setup
 
@@ -472,11 +557,12 @@ Nagatha includes a Discord bot plugin that allows you to bring AI assistant capa
 
 3. **Test in Discord:**
    ```
-   !ping    # Bot responds with "Pong!"
-   !hello   # Greeting message
+   /chat Hello Nagatha!    # AI conversation
+   /status                 # System status
+   /help                   # Show help
    ```
 
-For complete setup instructions, bot permissions, Docker deployment, and troubleshooting, see **[docs/DISCORD_SETUP.md](docs/DISCORD_SETUP.md)**.
+For complete setup instructions, see **[docs/DISCORD_SETUP.md](docs/DISCORD_SETUP.md)**.
 
 ## 🧪 Development
 
@@ -495,6 +581,8 @@ pytest --cov=nagatha_assistant --cov-report=html
 pytest tests/test_agent.py
 pytest tests/test_notes_module.py
 pytest tests/test_tasks_module.py
+pytest tests/test_dashboard.py
+pytest tests/test_discord_bot.py
 
 # Run tests with verbose output
 pytest -v
@@ -543,6 +631,32 @@ alembic history
 3. **CLI Commands**: Add commands to `src/nagatha_assistant/cli.py`
 4. **Tests**: Write comprehensive tests in `tests/`
 5. **Documentation**: Update README and add docstrings
+
+### Plugin Development
+
+Create custom plugins:
+
+```python
+from nagatha_assistant.core.plugin import SimplePlugin, PluginConfig, PluginCommand
+
+class MyPlugin(SimplePlugin):
+    async def setup(self):
+        # Register commands
+        command = PluginCommand(
+            name="my_command",
+            description="My custom command",
+            handler=self.handle_command,
+            plugin_name=self.name
+        )
+        
+        # Register with plugin manager
+        from nagatha_assistant.core.plugin_manager import get_plugin_manager
+        plugin_manager = get_plugin_manager()
+        plugin_manager.register_command(command)
+    
+    async def handle_command(self, **kwargs):
+        return "Command executed successfully"
+```
 
 ## 🚀 Deployment
 
@@ -602,6 +716,15 @@ echo $OPENAI_API_KEY
 nagatha models
 ```
 
+**Discord Bot Issues:**
+```bash
+# Check bot status
+nagatha discord status
+
+# Verify permissions and token
+nagatha discord setup
+```
+
 **Performance Issues:**
 - Reduce `CONTEXT_MEMORY_MESSAGES` for faster responses
 - Use `gpt-3.5-turbo` for cost-effective conversations
@@ -614,7 +737,7 @@ Enable debug logging for troubleshooting:
 ```bash
 export LOG_LEVEL=DEBUG
 export NAGATHA_LOG_LEVEL_FILE=DEBUG
-nagatha run
+nagatha dashboard
 ```
 
 ## 📈 Version History
@@ -626,6 +749,10 @@ See `CHANGELOG.md` for detailed version history and release notes.
 - Enhanced tool integration and management
 - Improved conversation handling and context management
 - Added comprehensive logging and debugging features
+- Implemented persistent memory system
+- Added Discord bot integration with plugin extensibility
+- Enhanced dashboard UI with real-time monitoring
+- Implemented event bus system for component communication
 
 ## 🤝 Contributing
 
@@ -650,4 +777,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ---
 
-**Need help?** Check `README_MCP.md` for MCP-specific documentation, or create an issue on GitHub for support.
+**Need help?** Check the documentation links above for specific guides, or create an issue on GitHub for support.

@@ -5,7 +5,7 @@ Integration tests for the event bus system with the agent module.
 import asyncio
 import pytest
 import pytest_asyncio
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, AsyncMock
 
 from nagatha_assistant.core.event_bus import get_event_bus
 from nagatha_assistant.core.event import StandardEventTypes, EventPriority
@@ -98,20 +98,23 @@ class TestEventBusIntegration:
         
         event_bus.subscribe("system.*", system_handler)
         
-        # Mock the MCP manager
+        # Mock the MCP manager and other dependencies
         with patch('nagatha_assistant.core.agent.shutdown_mcp_manager') as mock_shutdown:
-            # Call shutdown
-            await shutdown()
-        
-        # Give time for event processing
-        await asyncio.sleep(0.1)
-        
-        # Verify system shutdown event was published
-        assert len(received_events) == 1
-        event = received_events[0]
-        assert event.event_type == StandardEventTypes.SYSTEM_SHUTDOWN
-        assert event.priority == EventPriority.HIGH
-        assert event.source == "system"
+            with patch('nagatha_assistant.core.plugin_manager.shutdown_plugin_manager') as mock_plugin_shutdown:
+                with patch('nagatha_assistant.core.memory.shutdown_memory_manager') as mock_memory_shutdown:
+                    # Call shutdown but don't let it stop the event bus
+                    with patch.object(event_bus, 'stop') as mock_stop:
+                        await shutdown()
+                        
+                        # Give time for event processing
+                        await asyncio.sleep(0.1)
+                        
+                        # Verify system shutdown event was published
+                        assert len(received_events) == 1
+                        event = received_events[0]
+                        assert event.event_type == StandardEventTypes.SYSTEM_SHUTDOWN
+                        assert event.priority == EventPriority.HIGH
+                        assert event.source == "system"
     
     @pytest.mark.asyncio
     async def test_start_session_publishes_agent_event(self, clean_event_bus):
@@ -142,13 +145,11 @@ class TestEventBusIntegration:
                     mock_conv_session.created_at = None
                     
                     mock_db_session.add = Mock()
-                    mock_db_session.commit = Mock()
-                    mock_db_session.refresh = Mock()
+                    mock_db_session.commit = AsyncMock()
+                    mock_db_session.refresh = AsyncMock()
                     
                     # Setup return values
                     mock_db_session.add.return_value = None
-                    mock_db_session.commit = Mock()
-                    mock_db_session.refresh = Mock()
                     
                     with patch('nagatha_assistant.core.agent.ConversationSession', return_value=mock_conv_session):
                         # Call start_session
@@ -192,22 +193,37 @@ class TestEventBusIntegration:
         # Give time for processing
         await asyncio.sleep(0.1)
         
-        # Check history
+        # Check history - should have system startup event plus plugin events
         history = event_bus.get_event_history()
-        assert len(history) == 1
-        assert history[0].event_type == StandardEventTypes.SYSTEM_STARTUP
+        assert len(history) >= 1
         
-        # Call shutdown
-        with patch('nagatha_assistant.core.agent.shutdown_mcp_manager'):
-            await shutdown()
+        # Find the system startup event
+        startup_events = [event for event in history if event.event_type == StandardEventTypes.SYSTEM_STARTUP]
+        assert len(startup_events) == 1
+        assert startup_events[0].event_type == StandardEventTypes.SYSTEM_STARTUP
         
-        await asyncio.sleep(0.1)
-        
-        # Check history again
-        history = event_bus.get_event_history()
-        assert len(history) == 2
-        assert history[0].event_type == StandardEventTypes.SYSTEM_SHUTDOWN  # Most recent first
-        assert history[1].event_type == StandardEventTypes.SYSTEM_STARTUP
+        # Call shutdown but don't let it stop the event bus
+        with patch('nagatha_assistant.core.agent.shutdown_mcp_manager') as mock_shutdown:
+            with patch('nagatha_assistant.core.plugin_manager.shutdown_plugin_manager') as mock_plugin_shutdown:
+                with patch('nagatha_assistant.core.memory.shutdown_memory_manager') as mock_memory_shutdown:
+                    with patch.object(event_bus, 'stop') as mock_stop:
+                        await shutdown()
+                        
+                        await asyncio.sleep(0.1)
+                        
+                        # Check history again - should have both startup and shutdown events
+                        history = event_bus.get_event_history()
+                        assert len(history) >= 2
+                        
+                        # Find the system events
+                        system_events = [event for event in history if event.event_type in [StandardEventTypes.SYSTEM_STARTUP, StandardEventTypes.SYSTEM_SHUTDOWN]]
+                        assert len(system_events) >= 2
+                        
+                        # Check that we have both startup and shutdown events
+                        startup_events = [event for event in system_events if event.event_type == StandardEventTypes.SYSTEM_STARTUP]
+                        shutdown_events = [event for event in system_events if event.event_type == StandardEventTypes.SYSTEM_SHUTDOWN]
+                        assert len(startup_events) >= 1
+                        assert len(shutdown_events) >= 1
     
     @pytest.mark.asyncio
     async def test_multiple_event_subscribers(self, clean_event_bus):
