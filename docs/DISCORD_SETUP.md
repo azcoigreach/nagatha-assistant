@@ -54,7 +54,7 @@ To find your Guild ID:
 1. In the Discord Developer Portal, go to "OAuth2" > "URL Generator"
 2. Under "Scopes", select:
    - `bot`
-   - `applications.commands` (for slash commands, future feature)
+   - `applications.commands` (for slash commands)
 3. Under "Bot Permissions", select:
    - Send Messages
    - Read Message History
@@ -71,26 +71,45 @@ To find your Guild ID:
 Once configured, you can manage the Discord bot using these commands:
 
 ```bash
-# Check Discord bot setup
+# Check Discord bot setup and configuration
 nagatha discord setup
 
 # Get bot status
 nagatha discord status
 
-# Start the Discord bot
+# Start the Discord bot (runs in background)
 nagatha discord start
 
 # Stop the Discord bot
 nagatha discord stop
 ```
 
+### Auto-Start Configuration
+
+You can configure the Discord bot to start automatically when Nagatha starts by setting the `auto_start` option in the plugin configuration:
+
+```json
+{
+  "name": "discord_bot",
+  "config": {
+    "auto_start": true,
+    "command_prefix": "!"
+  }
+}
+```
+
 ### Available Bot Commands
 
-The bot responds to these commands in Discord:
+The bot provides both slash commands and legacy prefix commands:
 
+#### Slash Commands (Modern)
+- `/chat <message> [private]` - Chat with Nagatha AI assistant
+- `/status` - Get system status and plugin information
+- `/help` - Show help information
+
+#### Legacy Prefix Commands (Backward Compatibility)
 - `!ping` - Test bot connectivity (responds with "Pong!")
 - `!hello` - Greeting command
-- More commands will be added in future versions
 
 ### Basic Usage Example
 
@@ -99,8 +118,27 @@ The bot responds to these commands in Discord:
    ```bash
    nagatha discord start
    ```
-3. In your Discord server, type `!ping`
-4. The bot should respond with "Pong! Nagatha is online."
+3. In your Discord server, use slash commands like `/chat Hello Nagatha!`
+4. The bot will respond with AI-generated responses
+
+## Integration with Nagatha's Core Systems
+
+The Discord bot integrates deeply with Nagatha's core systems:
+
+### Event System Integration
+- Publishes events for message reception, bot status changes, and errors
+- Subscribes to system events for coordinated startup/shutdown
+- Enables other plugins to react to Discord activities
+
+### MCP Server Integration
+- The `/status` command shows connected MCP servers and available tools
+- Plugins can register custom slash commands that integrate with MCP tools
+- Enables AI-powered responses using all available MCP capabilities
+
+### Plugin System Integration
+- Built as a plugin that can be enabled/disabled
+- Provides APIs for other plugins to register custom commands
+- Integrates with the plugin manager for coordinated lifecycle management
 
 ## Docker Deployment
 
@@ -181,6 +219,11 @@ spec:
    - Verify Discord's service status
    - Check Nagatha logs for error messages
 
+5. **Slash Commands Not Appearing**
+   - Ensure the bot has `applications.commands` scope
+   - Check that commands were synced successfully
+   - Verify the bot is in the correct guild (if using guild-specific commands)
+
 ### Debug Mode
 
 Enable debug logging to troubleshoot issues:
@@ -196,7 +239,7 @@ If you encounter issues:
 
 1. Check the Nagatha logs for error messages
 2. Verify your Discord bot configuration
-3. Test with basic commands like `!ping`
+3. Test with basic commands like `/chat Hello`
 4. Create an issue on the GitHub repository with:
    - Error messages (remove sensitive tokens)
    - Steps to reproduce
@@ -209,17 +252,41 @@ If you encounter issues:
 3. **Limit bot permissions** - only grant necessary permissions
 4. **Regular token rotation** - regenerate tokens periodically
 5. **Monitor bot activity** - watch for unusual behavior
+6. **Use guild-specific commands** - when possible, limit commands to specific servers
+
+## Architecture Overview
+
+The Discord bot is built with a modular architecture:
+
+### Core Components
+- **DiscordBotPlugin**: Main plugin that manages the bot lifecycle
+- **NagathaDiscordBot**: Custom Discord.py bot class with Nagatha integration
+- **SlashCommandManager**: Manages slash command registration and routing
+- **Event Integration**: Publishes and subscribes to system events
+
+### Plugin Integration
+- **Command Registration**: Plugins can register custom slash commands
+- **Event Handling**: Plugins can react to Discord events
+- **MCP Integration**: Commands can utilize MCP server tools
+- **Lifecycle Management**: Coordinated startup/shutdown with other plugins
+
+### Extensibility
+- **Custom Commands**: Plugins can add their own slash commands
+- **Event-Driven**: Other systems can react to Discord activities
+- **MCP Tools**: Commands can leverage any available MCP server tools
+- **Plugin APIs**: Rich APIs for plugin integration
 
 ## Future Features
 
 The Discord bot foundation is designed to support future enhancements:
 
-- Integration with Nagatha's AI conversation system
-- Slash commands support
-- Voice channel integration
-- Scheduled messages and reminders
-- Server moderation features
-- Custom command creation
+- **Advanced AI Integration**: Deeper integration with Nagatha's conversation system
+- **Voice Channel Support**: Voice interaction capabilities
+- **Scheduled Messages**: Automated reminders and notifications
+- **Server Moderation**: Advanced moderation features
+- **Custom Command Creation**: User-defined commands
+- **Multi-Server Management**: Centralized management of multiple servers
+- **Analytics Dashboard**: Usage statistics and insights
 
 ## Contributing
 
@@ -233,5 +300,7 @@ To contribute to the Discord bot functionality:
 
 The Discord bot code is located in:
 - Plugin: `src/nagatha_assistant/plugins/discord_bot.py`
-- CLI commands: `src/nagatha_assistant/cli.py`
-- Tests: `tests/test_discord_bot.py`
+- Slash Commands: `src/nagatha_assistant/core/slash_commands.py`
+- Command Manager: `src/nagatha_assistant/core/slash_command_manager.py`
+- CLI Commands: `src/nagatha_assistant/cli.py`
+- Tests: `tests/test_discord_*.py`

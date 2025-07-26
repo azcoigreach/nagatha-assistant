@@ -30,8 +30,21 @@ Nagatha functions as an **MCP client** that can:
 - 🛠️ **Automatically discover tools** from all connected servers
 - 🧠 **Intelligently select tools** based on user requests using OpenAI's function calling
 - 🚀 **Support multiple transports** (stdio and HTTP)
-- 🔄 **Handle server lifecycles** with automatic reconnection and error recovery
+- 🔄 **Use on-demand connections** for efficient resource management
 - 📊 **Provide comprehensive monitoring** of server status and tool availability
+
+### Key Implementation Details
+
+**On-Demand Connection Model**: Unlike traditional persistent connections, Nagatha uses an on-demand connection approach:
+- Servers are tested during initialization to verify connectivity and discover tools
+- Actual tool calls create fresh connections for each request
+- This approach ensures reliability and prevents connection timeouts
+- Connections are automatically cleaned up after each tool call
+
+**Tool Naming**: Tools are registered with sanitized names to ensure OpenAI function calling compatibility:
+- Original tool names are preserved for internal use
+- Sanitized names follow the pattern: `^[a-zA-Z0-9_-]{1,64}$`
+- Both full names (`server_tool`) and short names (`tool`) are available when there are no conflicts
 
 ### Supported MCP Servers
 
@@ -62,10 +75,10 @@ Nagatha MCP Architecture
 ### Key Classes
 
 1. **MCPManager** (`src/nagatha_assistant/core/mcp_manager.py`)
-   - Manages multiple MCP server connections
+   - Manages multiple MCP server configurations
    - Handles tool discovery and registration
-   - Provides unified tool calling interface
-   - Manages server lifecycle (connect, disconnect, reconnect)
+   - Provides unified tool calling interface with on-demand connections
+   - Manages server lifecycle (test, discover, call)
 
 2. **Agent** (`src/nagatha_assistant/core/agent.py`)
    - Integrates MCP tools with OpenAI function calling
@@ -84,17 +97,20 @@ Nagatha MCP Architecture
 2. MCPManager reads mcp.json configuration
    ↓
 3. For each server:
-   - Establish connection (stdio/HTTP)
+   - Test connection (stdio/HTTP) with timeout
    - Call list_tools() to discover available tools
    - Register tools in the global tool registry
+   - Store server configuration for later use
    ↓
 4. Agent receives user message
    ↓
 5. OpenAI determines if tools are needed
    ↓
-6. Agent calls appropriate MCP tools
+6. Agent creates fresh connection and calls appropriate MCP tools
    ↓
 7. Results integrated into conversation
+   ↓
+8. Connection automatically cleaned up
 ```
 
 ## 🚀 Quick Setup
@@ -108,16 +124,15 @@ Create a `.env` file with essential variables:
 OPENAI_API_KEY=sk-your-openai-api-key-here
 
 # === MCP Configuration ===
-NAGATHA_MCP_TIMEOUT=10                       # Tool execution timeout
-NAGATHA_MCP_CONNECTION_TIMEOUT=10            # Server connection timeout
-NAGATHA_MCP_DISCOVERY_TIMEOUT=3              # Tool discovery timeout
+NAGATHA_MCP_CONNECTION_TIMEOUT=10            # Server connection timeout (seconds)
+NAGATHA_MCP_DISCOVERY_TIMEOUT=3              # Tool discovery timeout (seconds)
 
 # === OpenAI Settings ===
 OPENAI_MODEL=gpt-4o-mini                     # Default model
 OPENAI_TIMEOUT=60                            # API timeout
 
-# === Extended Timeouts for Tool-Heavy Conversations ===
-NAGATHA_CONVERSATION_TIMEOUT=120             # Longer timeout for complex tool usage
+# === Logging ===
+LOG_LEVEL=INFO                               # Set to DEBUG for detailed MCP logs
 ```
 
 ### 2. MCP Server Configuration
@@ -159,6 +174,12 @@ The `mcp.json` file defines all MCP servers and their configurations:
 }
 ```
 
+**Configuration Features:**
+- **Comments**: You can add string entries for documentation
+- **Disabled Servers**: Entries starting with `_` are ignored
+- **Environment Variables**: All `env` variables are passed to servers
+- **Validation**: Invalid configurations are logged and skipped
+
 ### Stdio Transport Configuration
 
 For servers that run as separate processes:
@@ -187,7 +208,7 @@ For servers that run as separate processes:
 
 **Configuration Options:**
 - `command`: Executable command (required)
-- `args`: Command line arguments (optional)
+- `args`: Command line arguments (optional, defaults to empty array)
 - `env`: Environment variables passed to the server (optional)
 
 ### HTTP Transport Configuration
@@ -208,11 +229,7 @@ For servers running as HTTP services:
     },
     "remote-mcp-server": {
       "transport": "http",
-      "url": "https://api.example.com/mcp",
-      "headers": {
-        "Authorization": "Bearer your_token",
-        "X-API-Version": "v1"
-      }
+      "url": "https://api.example.com/mcp"
     }
   }
 }
@@ -222,7 +239,8 @@ For servers running as HTTP services:
 - `transport`: Set to "http" (required)
 - `url`: MCP server endpoint URL (required)
 - `env`: Environment variables (optional, for server configuration)
-- `headers`: HTTP headers for authentication (optional)
+
+**Note**: HTTP headers are not currently supported in the configuration. For authentication, use environment variables or include credentials in the URL.
 
 ### Complete Example Configuration
 
@@ -255,7 +273,12 @@ For servers running as HTTP services:
     "mcp-server-bootstrap": {
       "command": "python",
       "args": ["/home/user/mcp-servers/bootstrap/server.py"]
-    }
+    },
+    "_disabled-server": {
+      "command": "python",
+      "args": ["/path/to/disabled/server.py"]
+    },
+    "This is a comment": "Documentation for the configuration"
   }
 }
 ```
@@ -474,32 +497,26 @@ docker run -d -p 8081:8080 \
 nagatha mcp status
 ```
 
-**Example Output:**
+**Actual Output Format:**
 ```
 === MCP Status ===
 Initialized: True
-Active Servers: 3/4
-Available Tools: 12
 
 === Servers ===
 ✓ firecrawl-mcp (stdio)
     Command: npx -y firecrawl-mcp
-    Status: Connected
     Tools: scrape, search, crawl, map, extract
-    
+
 ✗ failing-server (stdio)
     Command: python /bad/path.py
-    Status: Failed to connect
     Error: FileNotFoundError: /bad/path.py not found
-    
+
 ✓ nagatha-mastodon-mcp (http)
     URL: http://localhost:8080/mcp
-    Status: Connected
     Tools: evaluate_user_profile, analyze_user_activity
-    
+
 ✓ memory-mcp (stdio)
     Command: python -m memory_mcp.server
-    Status: Connected
     Tools: create_entities, search_nodes, read_graph
 
 === Available Tools ===
@@ -518,10 +535,11 @@ nagatha mcp reload
 ```
 
 This command:
-1. Disconnects from all current MCP servers
+1. Shuts down the current MCP manager
 2. Re-reads the `mcp.json` configuration file
-3. Attempts to connect to all configured servers
+3. Tests connections to all configured servers
 4. Re-discovers all available tools
+5. Reports the results
 
 ### Programmatic Management
 
@@ -529,40 +547,47 @@ This command:
 from nagatha_assistant.core.mcp_manager import get_mcp_manager
 
 async def manage_mcp():
-    manager = get_mcp_manager()
+    manager = await get_mcp_manager()
     
     # Get status information
-    status = await manager.get_status()
-    print(f"Servers: {len(status['servers'])}")
-    print(f"Tools: {len(status['tools'])}")
+    server_info = manager.get_server_info()
+    tools = manager.get_available_tools()
+    
+    print(f"Servers: {len(server_info)}")
+    print(f"Tools: {len(tools)}")
     
     # Reload configuration
     await manager.reload_configuration()
     
     # Check specific server
-    server_info = status['servers'].get('firecrawl-mcp')
-    if server_info:
-        print(f"Firecrawl status: {server_info['status']}")
+    server_info = manager.get_server_info()
+    firecrawl_info = server_info.get('firecrawl-mcp')
+    if firecrawl_info:
+        print(f"Firecrawl status: {firecrawl_info['connected']}")
 ```
 
 ## 🛠️ Tool Discovery & Usage
 
 ### How Tool Discovery Works
 
-1. **Server Connection**: Nagatha connects to each MCP server
-2. **Tool Listing**: Calls `list_tools()` on each server
-3. **Schema Conversion**: Converts MCP tool schemas to OpenAI function schemas
-4. **Registration**: Registers tools with both full names (`server.tool`) and short names
+1. **Server Testing**: Nagatha tests each MCP server during initialization
+2. **Tool Listing**: Calls `list_tools()` on each server with a timeout
+3. **Name Sanitization**: Converts tool names to OpenAI-compatible format
+4. **Registration**: Registers tools with both full and short names
 5. **Availability**: Tools become available for OpenAI function calling
 
 ### Tool Naming Convention
 
 Tools are registered with multiple names for flexibility:
 
-- **Full name**: `server-name.tool-name` (e.g., `firecrawl-mcp.scrape`)
-- **Short name**: `tool-name` (e.g., `scrape`)
+- **Full name**: `server_tool` (e.g., `firecrawl_mcp_scrape`)
+- **Short name**: `tool` (e.g., `scrape`) - only if no conflicts
 
-If multiple servers provide the same tool name, the full name prevents conflicts.
+**Name Sanitization Rules:**
+- Replace invalid characters with underscores
+- Ensure names start with alphanumeric characters
+- Limit to 64 characters
+- Follow OpenAI function name pattern: `^[a-zA-Z0-9_-]{1,64}$`
 
 ### Tool Usage in Conversations
 
@@ -575,9 +600,11 @@ Nagatha: I'll search for recent AI news for you.
 [Tool Selection Process:]
 1. OpenAI analyzes the request
 2. Determines "search" tool is appropriate
-3. Calls firecrawl-mcp.search with relevant parameters
-4. Receives search results
-5. Formats and presents results conversationally
+3. Creates fresh connection to firecrawl-mcp
+4. Calls firecrawl-mcp.search with relevant parameters
+5. Receives search results
+6. Formats and presents results conversationally
+7. Closes connection
 
 Nagatha: I found several recent AI news articles:
 [Presents formatted search results with sources]
@@ -601,7 +628,7 @@ Nagatha gracefully handles tool errors:
 ```python
 # Example error handling in MCPManager
 try:
-    result = await server.call_tool(tool_name, arguments)
+    result = await manager.call_tool(tool_name, arguments)
     return result
 except Exception as e:
     logger.warning(f"Tool {tool_name} failed: {e}")
@@ -644,36 +671,33 @@ async def test_mcp():
     logging.basicConfig(level=logging.DEBUG)
     
     # Get MCP manager
-    manager = get_mcp_manager()
-    
-    # Initialize and connect to servers
-    await manager.initialize()
+    manager = await get_mcp_manager()
     
     # Get status
-    status = await manager.get_status()
+    server_info = manager.get_server_info()
+    tools = manager.get_available_tools()
     
     print("=== MCP Test Results ===")
-    print(f"Initialized: {status['initialized']}")
-    print(f"Servers: {len(status['servers'])}")
-    print(f"Tools: {len(status['tools'])}")
+    print(f"Initialized: {manager._initialized}")
+    print(f"Servers: {len(server_info)}")
+    print(f"Tools: {len(tools)}")
     
     # Test each server
-    for server_name, server_info in status['servers'].items():
+    for server_name, info in server_info.items():
         print(f"\n--- {server_name} ---")
-        print(f"Status: {server_info['status']}")
-        if server_info['status'] == 'connected':
-            print(f"Tools: {', '.join(server_info.get('tools', []))}")
+        print(f"Connected: {info['connected']}")
+        print(f"Transport: {info['transport']}")
+        if info['connected']:
+            print(f"Tools: {info['tools_count']}")
         else:
-            print(f"Error: {server_info.get('error', 'Unknown error')}")
+            print(f"Error: {info.get('error', 'Unknown error')}")
     
     # Test tool call (if available)
-    if 'firecrawl-mcp.scrape' in status['tools']:
-        print("\n=== Testing Tool Call ===")
+    if tools:
+        tool_name = tools[0]['name']
+        print(f"\n=== Testing Tool Call: {tool_name} ===")
         try:
-            result = await manager.call_tool(
-                'firecrawl-mcp.scrape',
-                {'url': 'https://httpbin.org/json'}
-            )
+            result = await manager.call_tool(tool_name, {})
             print("Tool call successful!")
             print(f"Result type: {type(result)}")
         except Exception as e:
@@ -690,7 +714,7 @@ if __name__ == "__main__":
 **Stdio Server Won't Start:**
 ```bash
 # Check if command exists
-which npx  # For npm-based servers
+which npx  # For npm servers
 which python  # For Python servers
 
 # Test command manually
@@ -703,7 +727,7 @@ ls -la /path/to/server.py
 **HTTP Server Not Responding:**
 ```bash
 # Test HTTP endpoint
-curl http://localhost:8080/mcp/health
+curl http://localhost:8080/mcp
 
 # Check if server is running
 netstat -tulpn | grep 8080
@@ -873,50 +897,32 @@ tool_schema = {
 
 ### Performance Optimization
 
-#### Connection Pooling
-
-For HTTP-based MCP servers, consider connection pooling:
-
-```python
-# In MCPManager configuration
-http_client_config = {
-    "timeout": aiohttp.ClientTimeout(total=30),
-    "connector": aiohttp.TCPConnector(
-        limit=100,  # Total connection pool size
-        limit_per_host=30,  # Connections per host
-        keepalive_timeout=300,  # Keep connections alive
-        enable_cleanup_closed=True
-    )
-}
-```
-
 #### Timeout Configuration
 
 Adjust timeouts based on your tool requirements:
 
 ```bash
 # Quick tools (web search, simple queries)
-NAGATHA_MCP_TIMEOUT=5
+NAGATHA_MCP_CONNECTION_TIMEOUT=5
+NAGATHA_MCP_DISCOVERY_TIMEOUT=2
 
 # Heavy tools (web scraping, data processing)
-NAGATHA_MCP_TIMEOUT=30
+NAGATHA_MCP_CONNECTION_TIMEOUT=30
+NAGATHA_MCP_DISCOVERY_TIMEOUT=10
 
 # Very heavy tools (large crawls, AI processing)
-NAGATHA_MCP_TIMEOUT=120
+NAGATHA_MCP_CONNECTION_TIMEOUT=60
+NAGATHA_MCP_DISCOVERY_TIMEOUT=30
 ```
 
-#### Tool Prioritization
+#### On-Demand Connection Benefits
 
-Configure tool selection preferences:
+The on-demand connection model provides several advantages:
 
-```python
-# In personality.py or custom configuration
-TOOL_PREFERENCES = {
-    "search": ["firecrawl-mcp.search", "google-mcp.search"],
-    "scrape": ["firecrawl-mcp.scrape"],
-    "analyze": ["nagatha-mastodon-mcp.analyze_user_activity"]
-}
-```
+- **Reliability**: No persistent connection timeouts
+- **Resource Efficiency**: Connections only when needed
+- **Error Recovery**: Fresh connections for each request
+- **Scalability**: No connection pool management required
 
 ### Server Health Monitoring
 
@@ -925,21 +931,19 @@ Implement health checks for MCP servers:
 ```python
 # health_monitor.py
 import asyncio
-import aiohttp
 from nagatha_assistant.core.mcp_manager import get_mcp_manager
 
 async def health_check():
     """Monitor MCP server health."""
-    manager = get_mcp_manager()
+    manager = await get_mcp_manager()
     
     while True:
-        status = await manager.get_status()
+        server_info = manager.get_server_info()
         
-        for server_name, server_info in status['servers'].items():
-            if server_info['status'] != 'connected':
+        for server_name, info in server_info.items():
+            if not info['connected']:
                 print(f"⚠️  Server {server_name} is unhealthy")
-                # Attempt reconnection
-                await manager.reconnect_server(server_name)
+                # The on-demand model will handle reconnection automatically
         
         await asyncio.sleep(60)  # Check every minute
 
@@ -1007,7 +1011,7 @@ asyncio.run(health_check())
 **For HTTP servers:**
 1. Test endpoint:
    ```bash
-   curl http://localhost:8080/mcp/health
+   curl http://localhost:8080/mcp
    ```
 
 2. Check if service is running:
@@ -1030,7 +1034,7 @@ asyncio.run(health_check())
 **Solutions:**
 1. Increase timeout:
    ```bash
-   export NAGATHA_MCP_TIMEOUT=30
+   export NAGATHA_MCP_CONNECTION_TIMEOUT=30
    ```
 
 2. Check server performance:
@@ -1098,8 +1102,7 @@ import asyncio
 from nagatha_assistant.core.mcp_manager import get_mcp_manager
 
 async def test_tool():
-    manager = get_mcp_manager()
-    await manager.initialize()
+    manager = await get_mcp_manager()
     
     try:
         result = await manager.call_tool(
@@ -1126,18 +1129,14 @@ tail -f ~/.config/nagatha/mcp_servers.log
 
 #### Automatic Reconnection
 
-Nagatha automatically attempts to reconnect failed servers:
+With the on-demand connection model, Nagatha automatically handles reconnection:
 
 ```python
 # In MCPManager
-async def monitor_connections(self):
-    while True:
-        await asyncio.sleep(30)  # Check every 30 seconds
-        
-        for server_name, server in self.servers.items():
-            if not server.is_healthy():
-                logger.info(f"Attempting to reconnect {server_name}")
-                await self.reconnect_server(server_name)
+async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+    # Each tool call creates a fresh connection
+    # If connection fails, the error is handled gracefully
+    # No persistent connection management needed
 ```
 
 #### Manual Recovery
@@ -1162,6 +1161,7 @@ import asyncio
 import json
 import sys
 import aiohttp
+import os
 
 class WeatherMCPServer:
     def __init__(self, api_key):
@@ -1407,13 +1407,13 @@ Nagatha's workflow:
 
 ### Performance
 - Use appropriate timeouts for different tool types
-- Implement caching for frequently used data
+- Leverage the on-demand connection model for efficiency
 - Monitor server resource usage
-- Consider connection pooling for HTTP servers
+- Consider caching for frequently used data
 
 ### Reliability
 - Implement health checks for critical servers
-- Use automatic reconnection for transient failures
+- Use the on-demand connection model for automatic error recovery
 - Provide meaningful error messages
 - Log all tool calls for debugging
 
