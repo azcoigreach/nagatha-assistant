@@ -14,3 +14,5 @@ mcp.json
 .coverage
 .discord_bot.pid
 .nagatha_usage.json
+dump.rdb
+celerybeat-schedule
