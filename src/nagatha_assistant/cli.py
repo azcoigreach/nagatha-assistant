@@ -1068,25 +1068,30 @@ def celery_service_stop(redis, worker, beat, flower, all):
         except (subprocess.CalledProcessError, FileNotFoundError):
             click.echo("❌ Failed to stop Redis", err=True)
     
-    # Stop Celery processes
-    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-        try:
-            cmdline = ' '.join(proc.info['cmdline']) if proc.info['cmdline'] else ''
-            if any([
-                redis and 'redis-server' in cmdline,
-                worker and 'celery' in cmdline and 'worker' in cmdline,
-                beat and 'celery' in cmdline and 'beat' in cmdline,
-                flower and 'celery' in cmdline and 'flower' in cmdline
-            ]):
+    # Stop Celery processes using PID file
+    pid_file = "celery_pids.json"
+    if not os.path.exists(pid_file):
+        click.echo("❌ PID file not found. Unable to stop Celery processes.", err=True)
+        return
+    
+    try:
+        with open(pid_file, "r") as f:
+            pids = json.load(f)
+        
+        for pid in pids:
+            try:
+                proc = psutil.Process(pid)
                 proc.terminate()
                 try:
                     proc.wait(timeout=3)
-                    click.echo(f"✅ Stopped {proc.info['name']} (PID {proc.pid})")
+                    click.echo(f"✅ Stopped process with PID {pid}")
                 except psutil.TimeoutExpired:
                     proc.kill()
-                    click.echo(f"⚠️  Force killed {proc.info['name']} (PID {proc.pid})")
-        except (psutil.NoSuchProcess, psutil.TimeoutExpired):
-            pass
+                    click.echo(f"⚠️  Force killed process with PID {pid}")
+            except (psutil.NoSuchProcess, psutil.TimeoutExpired):
+                click.echo(f"⚠️  Process with PID {pid} not found or already stopped.")
+    except (json.JSONDecodeError, FileNotFoundError):
+        click.echo("❌ Failed to read PID file. Ensure it exists and contains valid data.", err=True)
 
 
 @service.command("status")
