@@ -65,17 +65,8 @@ async def record_task_history(task_id: str, task_name: str, status: str, result:
 def record_task_history_sync(task_id: str, task_name: str, status: str, result: Any = None, error: str = None, duration: float = None, worker: str = None) -> None:
     """Synchronous version of record_task_history for use in Celery tasks."""
     try:
-        import asyncio
-        
-        # Try to get the current event loop
-        try:
-            loop = asyncio.get_running_loop()
-            # If we have a running loop, create a task
-            asyncio.create_task(record_task_history(task_id, task_name, status, result, error, duration, worker))
-        except RuntimeError:
-            # No running loop, run in a new event loop
-            asyncio.run(record_task_history(task_id, task_name, status, result, error, duration, worker))
-            
+        # Submit the asynchronous function to the thread pool
+        thread_pool.submit(asyncio.run, record_task_history(task_id, task_name, status, result, error, duration, worker))
     except Exception as e:
         logger.error(f"Failed to record task history (sync): {e}")
 
