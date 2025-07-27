@@ -1,6 +1,5 @@
 import os
 import asyncio
-import logging
 from typing import Any, Dict, List, Optional, Callable, Awaitable
 import openai
 from openai import AsyncOpenAI
@@ -10,7 +9,7 @@ from sqlalchemy import select
 from nagatha_assistant.db import ensure_schema, SessionLocal
 from nagatha_assistant.db_models import ConversationSession, Message
 from nagatha_assistant.utils.usage_tracker import record_usage
-from nagatha_assistant.utils.logger import setup_logger_with_env_control, should_log_to_chat
+from nagatha_assistant.utils.logger import setup_logger_with_env_control, should_log_to_chat, get_logger
 from nagatha_assistant.core.mcp_manager import get_mcp_manager, shutdown_mcp_manager
 from nagatha_assistant.core.personality import get_system_prompt
 from nagatha_assistant.core.event_bus import get_event_bus
@@ -52,7 +51,8 @@ async def _notify(session_id: int, message: Message) -> None:
             if asyncio.iscoroutine(res):
                 asyncio.create_task(res)
         except Exception:
-            logging.exception("Error in push callback for session %s", session_id)
+            logger = get_logger()
+            logger.exception("Error in push callback for session %s", session_id)
 
 # Database initialization and session handling
 async def init_db() -> None:
@@ -62,7 +62,7 @@ async def init_db() -> None:
 
 async def _autonomous_memory_maintenance_loop() -> None:
     """Background task for autonomous memory maintenance."""
-    logger = setup_logger_with_env_control()
+    logger = get_logger()
     
     while True:
         try:
@@ -95,7 +95,7 @@ async def startup() -> Dict[str, Any]:
     Returns summary of MCP server connections for error reporting.
     """
     # Setup enhanced logging
-    logger = setup_logger_with_env_control()
+    logger = get_logger()
     
     # Start the event bus
     event_bus = get_event_bus()
@@ -164,7 +164,8 @@ async def shutdown() -> None:
         from .plugin_manager import shutdown_plugin_manager
         await shutdown_plugin_manager()
     except Exception as e:
-        logging.exception(f"Error shutting down plugins: {e}")
+        logger = get_logger()
+        logger.exception(f"Error shutting down plugins: {e}")
     
     # Cancel memory maintenance task (only if it exists)
     global _memory_maintenance_task
@@ -174,14 +175,16 @@ async def shutdown() -> None:
             await _memory_maintenance_task
         except asyncio.CancelledError:
             pass
-        logging.info("Memory maintenance task cancelled")
+        logger = get_logger()
+        logger.info("Memory maintenance task cancelled")
     
     # Shutdown memory manager
     try:
         from .memory import shutdown_memory_manager
         await shutdown_memory_manager()
     except Exception as e:
-        logging.exception(f"Error shutting down memory manager: {e}")
+        logger = get_logger()
+        logger.exception(f"Error shutting down memory manager: {e}")
     
     await shutdown_mcp_manager()
     
@@ -190,7 +193,7 @@ async def shutdown() -> None:
 
 async def start_session() -> int:
     """Create a new conversation session and return its ID."""
-    logger = setup_logger_with_env_control()
+    logger = get_logger()
     await init_db()
     # Ensure MCP is initialized
     await get_mcp_manager()
@@ -200,7 +203,8 @@ async def start_session() -> int:
         from .memory import ensure_memory_manager_started
         await ensure_memory_manager_started()
     except Exception as e:
-        logging.exception(f"Error ensuring memory manager is started: {e}")
+        logger = get_logger()
+        logger.exception(f"Error ensuring memory manager is started: {e}")
     
     # Ensure plugins are initialized
     try:
@@ -209,7 +213,8 @@ async def start_session() -> int:
         if not plugin_manager._plugins:  # Only load if not already loaded
             await plugin_manager.load_and_start_all()
     except Exception as e:
-        logging.exception(f"Error ensuring plugins are loaded: {e}")
+        logger = get_logger()
+        logger.exception(f"Error ensuring plugins are loaded: {e}")
     
     async with SessionLocal() as session:
         new_session = ConversationSession()
@@ -299,7 +304,8 @@ async def get_available_tools() -> List[Dict[str, Any]]:
         mcp_tools = mcp_manager.get_available_tools()
         tools.extend(mcp_tools)
     except Exception as e:
-        logging.error(f"Error getting MCP tools: {e}")
+        logger = get_logger()
+        logger.error(f"Error getting MCP tools: {e}")
     
     # Get plugin commands
     try:
@@ -320,7 +326,8 @@ async def get_available_tools() -> List[Dict[str, Any]]:
                 "server": f"plugin:{cmd_info['plugin']}"
             })
     except Exception as e:
-        logging.error(f"Error getting plugin commands: {e}")
+        logger = get_logger()
+        logger.error(f"Error getting plugin commands: {e}")
     
     return tools
 
@@ -335,7 +342,8 @@ async def get_mcp_status() -> Dict[str, Any]:
             "summary": mcp_manager.get_initialization_summary()
         }
     except Exception as e:
-        logging.error(f"Error getting MCP status: {e}")
+        logger = get_logger()
+        logger.error(f"Error getting MCP status: {e}")
         return {"error": str(e), "servers": {}, "tools": [], "initialized": False}
 
 async def reload_mcp_configuration() -> Dict[str, Any]:
@@ -345,7 +353,8 @@ async def reload_mcp_configuration() -> Dict[str, Any]:
         await mcp_manager.reload_configuration()
         return await get_mcp_status()
     except Exception as e:
-        logging.error(f"Error reloading MCP configuration: {e}")
+        logger = get_logger()
+        logger.error(f"Error reloading MCP configuration: {e}")
         return {"error": str(e), "servers": {}, "tools": [], "initialized": False}
 
 async def call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Any:
@@ -354,7 +363,8 @@ async def call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Any:
         mcp_manager = await get_mcp_manager()
         return await mcp_manager.call_tool(tool_name, arguments)
     except Exception as e:
-        logging.error(f"Error calling MCP tool '{tool_name}': {e}")
+        logger = get_logger()
+        logger.error(f"Error calling MCP tool '{tool_name}': {e}")
         raise
 
 
@@ -365,7 +375,8 @@ async def call_plugin_command(command_name: str, arguments: Dict[str, Any]) -> A
         plugin_manager = get_plugin_manager()
         return await plugin_manager.execute_command(command_name, **arguments)
     except Exception as e:
-        logging.error(f"Error calling plugin command '{command_name}': {e}")
+        logger = get_logger()
+        logger.error(f"Error calling plugin command '{command_name}': {e}")
         raise
 
 
@@ -383,7 +394,8 @@ async def call_tool_or_command(name: str, arguments: Dict[str, Any]) -> Any:
             # Fall back to plugin command
             return await call_plugin_command(name, arguments)
         except Exception as e:
-            logging.error(f"Error calling tool/command '{name}': {e}")
+            logger = get_logger()
+            logger.error(f"Error calling tool/command '{name}': {e}")
             raise
 
 def format_mcp_status_for_chat(init_summary: Dict[str, Any]) -> str:
@@ -530,7 +542,8 @@ def _select_relevant_tools(available_tools: List[Dict[str, Any]], user_message: 
         
         selected_tools.extend(categories[:remaining_slots])
     
-    logging.getLogger(__name__).info(f"Tool selection: {len(available_tools)} available, {len(selected_tools)} selected for user message")
+    logger = get_logger()
+    logger.info(f"Tool selection: {len(available_tools)} available, {len(selected_tools)} selected for user message")
     return selected_tools
 
 async def send_message(
@@ -546,7 +559,7 @@ async def send_message(
     This function handles both direct tool calls and intelligent conversation
     that may involve using MCP tools when appropriate.
     """
-    logger = setup_logger_with_env_control()
+    logger = get_logger()
 
     if not model:
         model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")

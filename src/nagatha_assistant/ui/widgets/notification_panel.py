@@ -21,9 +21,9 @@ from nagatha_assistant.core.event_bus import get_event_bus, Event
 from nagatha_assistant.core.event import StandardEventTypes, EventPriority
 from nagatha_assistant.core import agent
 from nagatha_assistant.db_models import Task, Reminder
-from nagatha_assistant.utils.logger import setup_logger_with_env_control
+from nagatha_assistant.utils.logger import setup_logger_with_env_control, get_logger
 
-logger = setup_logger_with_env_control()
+logger = get_logger()
 
 
 class NotificationItem:

@@ -5,7 +5,6 @@ This module defines common tasks that can be scheduled and executed by the Celer
 Tasks integrate with the existing event system and can be used by plugins and MCPs.
 """
 
-import logging
 import os
 import subprocess
 import json
@@ -17,8 +16,9 @@ from ..core.celery_app import celery_app
 from ..core.event import Event, StandardEventTypes, create_system_event
 from ..core.event_bus import get_event_bus
 from ..core.memory import get_memory_manager
+from nagatha_assistant.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 event_bus = get_event_bus()
 
 

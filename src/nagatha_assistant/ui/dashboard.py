@@ -23,13 +23,13 @@ from textual.reactive import reactive
 from nagatha_assistant.core.event_bus import ensure_event_bus_started, Event
 from nagatha_assistant.core.event import create_agent_event, StandardEventTypes, EventPriority
 from nagatha_assistant.core import agent
-from nagatha_assistant.utils.logger import setup_logger_with_env_control
+from nagatha_assistant.utils.logger import setup_logger_with_env_control, get_logger
 from .widgets import StatusPanel, CommandPanel, NotificationPanel, ResourceMonitor
 
 # Directly import needed functions from main ui module to avoid circular imports
 import nagatha_assistant.ui as main_ui_module
 
-logger = setup_logger_with_env_control()
+logger = get_logger()
 
 # Configuration from environment
 MCP_TIMEOUT = float(os.getenv("NAGATHA_MCP_TIMEOUT", "10"))

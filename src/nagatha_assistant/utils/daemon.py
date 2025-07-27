@@ -8,12 +8,11 @@ import os
 import sys
 import signal
 import asyncio
-import logging
 from pathlib import Path
 from typing import Optional, Callable
 import psutil
 
-from nagatha_assistant.utils.logger import setup_logger_with_env_control
+from nagatha_assistant.utils.logger import setup_logger_with_env_control, get_logger
 
 logger = setup_logger_with_env_control()
 

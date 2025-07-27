@@ -12,7 +12,6 @@ and retrieve information across sessions, including:
 """
 
 import asyncio
-import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Union
 from enum import Enum
@@ -20,9 +19,9 @@ from enum import Enum
 from nagatha_assistant.core.storage import StorageBackend, DatabaseStorageBackend, InMemoryStorageBackend
 from nagatha_assistant.core.event_bus import get_event_bus
 from nagatha_assistant.core.event import StandardEventTypes, create_memory_event, EventPriority
-from nagatha_assistant.utils.logger import setup_logger_with_env_control
+from nagatha_assistant.utils.logger import setup_logger_with_env_control, get_logger
 
-logger = setup_logger_with_env_control()
+logger = get_logger()
 
 
 class PersistenceLevel(Enum):

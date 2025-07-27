@@ -5,7 +5,6 @@ This module provides centralized management of Discord slash commands,
 including registration, routing, and integration with plugins and MCP servers.
 """
 
-import logging
 import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -15,8 +14,9 @@ from enum import Enum
 import discord
 from discord.ext import commands
 from discord import app_commands
+from nagatha_assistant.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class SlashCommandType(Enum):
@@ -58,7 +58,7 @@ class BaseSlashCommand(ABC):
     
     def __init__(self, plugin_name: str):
         self.plugin_name = plugin_name
-        self.logger = logging.getLogger(f"slash_command.{plugin_name}")
+        self.logger = get_logger(f"slash_command.{plugin_name}")
     
     @abstractmethod
     def get_command_definition(self) -> SlashCommandDefinition:
@@ -104,7 +104,7 @@ class SlashCommandManager:
         self.bot = bot
         self._commands: Dict[str, SlashCommandDefinition] = {}
         self._command_handlers: Dict[str, BaseSlashCommand] = {}
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger()
         
         # Set up error handling
         self._setup_error_handling()

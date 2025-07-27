@@ -5,14 +5,14 @@ This plugin shows how other plugins and MCP servers can register
 their own slash commands with the Discord bot.
 """
 
-import logging
 from typing import Optional
 import discord
 
 from nagatha_assistant.core.plugin import SimplePlugin, PluginConfig
 from nagatha_assistant.core.event import Event
+from nagatha_assistant.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class ExampleSlashCommandPlugin(SimplePlugin):

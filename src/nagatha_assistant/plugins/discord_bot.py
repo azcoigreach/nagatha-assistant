@@ -6,7 +6,6 @@ providing AI assistant capabilities through Discord channels.
 """
 
 import os
-import logging
 import asyncio
 from typing import Any, Dict, Optional, List
 from datetime import datetime, timedelta
@@ -19,7 +18,7 @@ from nagatha_assistant.core.plugin import SimplePlugin, PluginConfig, PluginComm
 from nagatha_assistant.core.event import Event, StandardEventTypes, create_system_event
 from nagatha_assistant.core.slash_command_manager import SlashCommandManager
 from nagatha_assistant.core.slash_commands import ChatSlashCommand, StatusSlashCommand, HelpSlashCommand
-from nagatha_assistant.utils.logger import setup_logger_with_env_control
+from nagatha_assistant.utils.logger import setup_logger_with_env_control, get_logger
 from nagatha_assistant.db_models import DiscordAutoChat
 from nagatha_assistant.db import SessionLocal
 

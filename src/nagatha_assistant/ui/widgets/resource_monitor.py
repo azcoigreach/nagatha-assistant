@@ -21,9 +21,9 @@ from textual.reactive import reactive
 
 from nagatha_assistant.core.event_bus import get_event_bus
 from nagatha_assistant.utils.usage_tracker import load_usage, reset_usage, get_reset_info
-from nagatha_assistant.utils.logger import setup_logger_with_env_control
+from nagatha_assistant.utils.logger import get_logger
 
-logger = setup_logger_with_env_control()
+logger = get_logger()
 
 
 class ResourceMetrics:

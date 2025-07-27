@@ -3,7 +3,8 @@ from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from functools import lru_cache
-import concurrent.futures, asyncio, logging, pathlib, threading
+import concurrent.futures, asyncio, pathlib, threading
+from nagatha_assistant.utils.logger import get_logger
 
 
 # Load environment variables
@@ -71,11 +72,13 @@ def _migration_runner() -> None:
             command.upgrade(cfg, "head")
         except Exception as exc:  # noqa: BLE001
             if "already exists" in str(exc):
-                logging.getLogger().debug("Schema already present, skip Alembic upgrade")
+                logger = get_logger()
+                logger.debug("Schema already present, skip Alembic upgrade")
             else:
                 raise
     except ModuleNotFoundError:
-        logging.getLogger().warning(
+        logger = get_logger()
+        logger.warning(
             "Alembic not installed – falling back to metadata.create_all()"
         )
 

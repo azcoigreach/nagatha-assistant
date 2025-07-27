@@ -7,7 +7,6 @@ time specification capabilities.
 """
 
 import asyncio
-import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, Union, List, Callable
 from celery.schedules import crontab, timedelta as celery_timedelta
@@ -17,8 +16,9 @@ import re
 from .celery_app import celery_app, add_periodic_task, remove_periodic_task, get_beat_schedule
 from .event import Event, StandardEventTypes, create_system_event
 from .event_bus import get_event_bus
+from nagatha_assistant.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 # Initialize parsedatetime calendar
 cal = parsedatetime.Calendar()

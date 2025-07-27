@@ -1,6 +1,5 @@
 import os
 import sys
-import logging
 import click
 import datetime
 import asyncio
@@ -13,7 +12,7 @@ import psutil
 # Ensure src directory is on PYTHONPATH for package imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from nagatha_assistant.utils.logger import setup_logger
+from nagatha_assistant.utils.logger import setup_logger, get_logger
 
 
 @click.group()
@@ -25,6 +24,7 @@ def cli(log_level):
     # Setup logging
     level_name = (log_level or os.getenv("LOG_LEVEL") or "WARNING").upper()
     logger = setup_logger()
+    import logging
     level = getattr(logging, level_name, logging.WARNING)
     logger.setLevel(level)
     logging.root.setLevel(level)

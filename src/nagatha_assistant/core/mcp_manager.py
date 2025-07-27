@@ -7,7 +7,6 @@ Uses on-demand connections like the working test client approach.
 
 import asyncio
 import json
-import logging
 import os
 import time
 from dataclasses import dataclass
@@ -17,6 +16,7 @@ import re
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamablehttp_client
+from nagatha_assistant.utils.logger import get_logger
 
 @dataclass
 class MCPServerConfig:
@@ -54,7 +54,7 @@ class MCPManager:
         self.tools: Dict[str, MCPTool] = {}
         self.server_statuses: Dict[str, MCPServerStatus] = {}
         self._initialized = False
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger()
 
     def _load_config(self) -> Dict[str, MCPServerConfig]:
         """Load MCP server configurations from JSON file."""

@@ -11,12 +11,11 @@ from textual.widgets.option_list import Option
 from textual.binding import Binding
 from textual.screen import ModalScreen
 from textual.containers import Vertical, Horizontal
-from nagatha_assistant.utils.logger import setup_logger_with_env_control, should_log_to_chat
+from nagatha_assistant.utils.logger import setup_logger_with_env_control, should_log_to_chat, get_logger
 from nagatha_assistant.core import agent
-import logging
 
 # Set up enhanced logger
-logger = setup_logger_with_env_control()
+logger = get_logger()
 
 # Get tool name from env or default
 MCP_TOOL = os.getenv("NAGATHA_MCP_TOOL", "run_python_code")

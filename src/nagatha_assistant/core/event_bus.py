@@ -12,7 +12,6 @@ This module provides a thread-safe, asynchronous event bus with support for:
 
 import asyncio
 import fnmatch
-import logging
 import threading
 import weakref
 from collections import defaultdict, deque
@@ -20,8 +19,9 @@ from typing import Any, Dict, List, Optional, Set, Callable, Awaitable, Union
 from datetime import datetime, timezone
 
 from .event import Event, EventHandler, EventPriority, SyncEventHandler, AsyncEventHandler
+from nagatha_assistant.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class EventBusError(Exception):

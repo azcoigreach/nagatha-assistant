@@ -9,7 +9,6 @@ import asyncio
 import importlib
 import importlib.util
 import inspect
-import logging
 import os
 import threading
 import time
@@ -21,8 +20,9 @@ from .plugin import (
 )
 from .event import Event, create_system_event, EventPriority
 from .event_bus import get_event_bus
+from nagatha_assistant.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class PluginManager:

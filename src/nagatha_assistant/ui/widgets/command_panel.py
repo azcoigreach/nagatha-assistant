@@ -19,9 +19,9 @@ from textual.binding import Binding
 from nagatha_assistant.core.event_bus import get_event_bus, Event
 from nagatha_assistant.core.event import create_agent_event, StandardEventTypes, EventPriority
 from nagatha_assistant.core import agent
-from nagatha_assistant.utils.logger import setup_logger_with_env_control
+from nagatha_assistant.utils.logger import setup_logger_with_env_control, get_logger
 
-logger = setup_logger_with_env_control()
+logger = get_logger()
 
 
 class CommandPanel(Vertical):

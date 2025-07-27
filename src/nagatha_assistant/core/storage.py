@@ -6,7 +6,6 @@ including database storage and in-memory caching.
 """
 
 import json
-import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
@@ -16,9 +15,9 @@ from sqlalchemy.exc import IntegrityError
 
 from nagatha_assistant.db import SessionLocal
 from nagatha_assistant.db_models import MemorySection, MemoryEntry
-from nagatha_assistant.utils.logger import setup_logger_with_env_control
+from nagatha_assistant.utils.logger import setup_logger_with_env_control, get_logger
 
-logger = setup_logger_with_env_control()
+logger = get_logger()
 
 
 class StorageBackend(ABC):
