@@ -290,14 +290,14 @@ def backup_memory(self, section: Optional[str] = None):
         
         if section:
             # Backup specific section
-            data = memory.get_all(section)
+            data = await memory.get_all(section)
             backup_data = {section: data}
         else:
             # Backup all sections
-            sections = memory.list_sections()
+            sections = await memory.list_sections()
             backup_data = {}
             for sect in sections:
-                backup_data[sect] = memory.get_all(sect)
+                backup_data[sect] = await memory.get_all(sect)
         
         # Create backup directory
         backup_dir = "backups"
