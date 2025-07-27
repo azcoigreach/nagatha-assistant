@@ -12,3 +12,8 @@ pytest
 pytest-cov
 discord.py
 psutil
+celery
+redis
+celery-beat
+flower
+parsedatetime
