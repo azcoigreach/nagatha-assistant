@@ -172,31 +172,11 @@ def _load_beat_schedule() -> None:
         
         # Convert back to Celery schedule objects
         for task_name, task_config in serializable_schedule.items():
-            schedule_type = task_config.get('schedule_type', 'string')
-            schedule_value = task_config['schedule']
-            
-            if schedule_type == 'crontab':
-                # Parse crontab string
-                parts = schedule_value.split()
-                if len(parts) == 5:
-                    minute, hour, day_of_month, month_of_year, day_of_week = parts
-                    schedule = crontab(
-                        minute=minute if minute != '*' else None,
-                        hour=hour if hour != '*' else None,
-                        day_of_month=day_of_month if day_of_month != '*' else None,
-                        month_of_year=month_of_year if month_of_year != '*' else None,
-                        day_of_week=day_of_week if day_of_week != '*' else None
-                    )
-                else:
-                    logger.warning(f"Invalid crontab format for task {task_name}: {schedule_value}")
-                    continue
-            elif schedule_type == 'timedelta':
-                # Convert seconds back to timedelta
-                from celery.schedules import timedelta as celery_timedelta
-                schedule = celery_timedelta(seconds=schedule_value)
-            else:
-                # Keep as string for other types
-                schedule = schedule_value
+            try:
+                schedule = ScheduleSerializer.deserialize(task_config)
+            except Exception as e:
+                logger.warning(f"Failed to deserialize schedule for task {task_name}: {e}")
+                continue
             
             # Reconstruct task config
             task_config_copy = {
