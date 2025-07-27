@@ -469,18 +469,18 @@ def cleanup_memory(self, section: Optional[str] = None, days_old: int = 30):
         if section:
             sections = [section]
         else:
-            sections = memory.list_sections()
+            sections = await memory.list_sections()
         
         for sect in sections:
             try:
-                data = memory.get_all(sect)
+                data = await memory.get_all(sect)
                 for key, value in data.items():
                     # Check if entry has timestamp and is old
                     if isinstance(value, dict) and 'timestamp' in value:
                         try:
                             entry_time = datetime.fromisoformat(value['timestamp'])
                             if entry_time < cutoff_date:
-                                memory.delete(sect, key)
+                                await memory.delete(sect, key)
                                 cleaned_entries += 1
                         except (ValueError, TypeError):
                             continue
