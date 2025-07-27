@@ -5,6 +5,10 @@ import click
 import datetime
 import asyncio
 import json
+import subprocess
+import signal
+import time
+import psutil
 
 # Ensure src directory is on PYTHONPATH for package imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -946,6 +950,622 @@ def dashboard():
                 logger.exception("Error during dashboard shutdown")
     
     asyncio.run(_run_dashboard_with_lifecycle())
+
+
+@cli.group()
+def celery():
+    """
+    Celery task scheduling and worker management commands.
+    
+    This group provides commands to manage the Celery distributed task system,
+    including starting/stopping services, scheduling tasks, and monitoring execution.
+    
+    Quick Start:
+      1. Start services: nagatha celery service start --all
+      2. List available tasks: nagatha celery task available
+      3. Schedule a task: nagatha celery task schedule nagatha.system.health_check "every 5 minutes"
+      4. Monitor tasks: nagatha celery service start --flower (then visit http://localhost:5555)
+    """
+    pass
+
+
+@celery.group()
+def service():
+    """
+    Manage Celery services (Redis, Celery worker, Celery beat, Flower).
+    """
+    pass
+
+
+@service.command("start")
+@click.option("--redis", is_flag=True, help="Start Redis server")
+@click.option("--worker", is_flag=True, help="Start Celery worker")
+@click.option("--beat", is_flag=True, help="Start Celery beat scheduler")
+@click.option("--flower", is_flag=True, help="Start Flower monitoring")
+@click.option("--all", is_flag=True, help="Start all services")
+@click.option("--daemon", is_flag=True, help="Run services as daemons")
+def celery_service_start(redis, worker, beat, flower, all, daemon):
+    """Start Celery services."""
+    if all:
+        redis = worker = beat = flower = True
+    
+    if not any([redis, worker, beat, flower]):
+        click.echo("Please specify which services to start or use --all", err=True)
+        return
+    
+    # Start Redis
+    if redis:
+        click.echo("Starting Redis server...")
+        try:
+            if daemon:
+                subprocess.Popen(["redis-server", "--daemonize", "yes"])
+                click.echo("✅ Redis started as daemon")
+            else:
+                subprocess.Popen(["redis-server"])
+                click.echo("✅ Redis started")
+        except FileNotFoundError:
+            click.echo("❌ Redis server not found. Please install Redis.", err=True)
+            return
+    
+    # Start Celery worker
+    if worker:
+        click.echo("Starting Celery worker...")
+        try:
+            cmd = ["celery", "-A", "nagatha_assistant.core.celery_app", "worker", "--loglevel=info"]
+            if daemon:
+                cmd.extend(["--detach"])
+            subprocess.Popen(cmd)
+            click.echo("✅ Celery worker started")
+        except FileNotFoundError:
+            click.echo("❌ Celery not found. Please install Celery.", err=True)
+    
+    # Start Celery beat
+    if beat:
+        click.echo("Starting Celery beat scheduler...")
+        try:
+            cmd = ["celery", "-A", "nagatha_assistant.core.celery_app", "beat", "--loglevel=info"]
+            if daemon:
+                cmd.extend(["--detach"])
+            subprocess.Popen(cmd)
+            click.echo("✅ Celery beat started")
+        except FileNotFoundError:
+            click.echo("❌ Celery not found. Please install Celery.", err=True)
+    
+    # Start Flower
+    if flower:
+        click.echo("Starting Flower monitoring...")
+        try:
+            cmd = ["celery", "-A", "nagatha_assistant.core.celery_app", "flower", "--port=5555"]
+            if daemon:
+                cmd.extend(["--detach"])
+            subprocess.Popen(cmd)
+            click.echo("✅ Flower started on http://localhost:5555")
+        except FileNotFoundError:
+            click.echo("❌ Flower not found. Please install Flower.", err=True)
+
+
+@service.command("stop")
+@click.option("--redis", is_flag=True, help="Stop Redis server")
+@click.option("--worker", is_flag=True, help="Stop Celery worker")
+@click.option("--beat", is_flag=True, help="Stop Celery beat scheduler")
+@click.option("--flower", is_flag=True, help="Stop Flower monitoring")
+@click.option("--all", is_flag=True, help="Stop all services")
+def celery_service_stop(redis, worker, beat, flower, all):
+    """Stop Celery services."""
+    if all:
+        redis = worker = beat = flower = True
+    
+    if not any([redis, worker, beat, flower]):
+        click.echo("Please specify which services to stop or use --all", err=True)
+        return
+    
+    # Stop Redis
+    if redis:
+        click.echo("Stopping Redis server...")
+        try:
+            subprocess.run(["redis-cli", "shutdown"], check=True)
+            click.echo("✅ Redis stopped")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            click.echo("❌ Failed to stop Redis", err=True)
+    
+    # Stop Celery processes using PID file
+    pid_file = "celery_pids.json"
+    if not os.path.exists(pid_file):
+        click.echo("❌ PID file not found. Unable to stop Celery processes.", err=True)
+        return
+    
+    try:
+        with open(pid_file, "r") as f:
+            pids = json.load(f)
+        
+        for pid in pids:
+            try:
+                proc = psutil.Process(pid)
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                    click.echo(f"✅ Stopped process with PID {pid}")
+                except psutil.TimeoutExpired:
+                    proc.kill()
+                    click.echo(f"⚠️  Force killed process with PID {pid}")
+            except (psutil.NoSuchProcess, psutil.TimeoutExpired):
+                click.echo(f"⚠️  Process with PID {pid} not found or already stopped.")
+    except (json.JSONDecodeError, FileNotFoundError):
+        click.echo("❌ Failed to read PID file. Ensure it exists and contains valid data.", err=True)
+
+
+@service.command("status")
+def celery_service_status():
+    """Show status of Celery services."""
+    services = {
+        'Redis': {'processes': [], 'port': 6379},
+        'Celery Worker': {'processes': [], 'port': None},
+        'Celery Beat': {'processes': [], 'port': None},
+        'Flower': {'processes': [], 'port': 5555}
+    }
+    
+    # Check processes
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            cmdline = ' '.join(proc.info['cmdline']) if proc.info['cmdline'] else ''
+            if 'redis-server' in cmdline:
+                services['Redis']['processes'].append(proc)
+            elif 'celery' in cmdline and 'worker' in cmdline:
+                services['Celery Worker']['processes'].append(proc)
+            elif 'celery' in cmdline and 'beat' in cmdline:
+                services['Celery Beat']['processes'].append(proc)
+            elif 'celery' in cmdline and 'flower' in cmdline:
+                services['Flower']['processes'].append(proc)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    
+    # Display status
+    click.echo("Celery Services Status:")
+    click.echo("=" * 50)
+    
+    for service_name, info in services.items():
+        status = "🟢 Running" if info['processes'] else "🔴 Stopped"
+        process_count = len(info['processes'])
+        port_info = f" (port {info['port']})" if info['port'] else ""
+        
+        click.echo(f"{service_name}: {status} ({process_count} processes{port_info})")
+        
+        for proc in info['processes']:
+            try:
+                click.echo(f"  - PID {proc.pid}: {proc.info['name']}")
+            except psutil.NoSuchProcess:
+                pass
+
+
+@celery.group()
+def task():
+    """
+    Task scheduling and management commands.
+    
+    Commands for scheduling, listing, and managing Celery tasks.
+    Tasks can be scheduled using natural language or cron format.
+    """
+    pass
+
+
+@task.command("schedule")
+@click.argument("task_name")
+@click.argument("schedule")
+@click.option("--args", help="Task arguments (JSON format)")
+@click.option("--kwargs", help="Task keyword arguments (JSON format)")
+@click.option("--task-id", help="Custom task ID")
+def celery_task_schedule(task_name, schedule, args, kwargs, task_id):
+    """
+    Schedule a task.
+    
+    TASK_NAME: Name of the task to schedule (e.g., nagatha.system.health_check)
+    
+    SCHEDULE: Time specification in natural language or cron format:
+    
+    Natural Language Examples:
+      One-time: "in 5 minutes", "tomorrow at 9am", "next monday at 8am"
+      Recurring: "every 5 minutes", "every hour", "every day at 2pm"
+      Specific: "2024-01-15 14:30", "every monday at 8am"
+    
+    Cron Format Examples:
+      "0 2 * * *"     (daily at 2am)
+      "*/15 * * * *"  (every 15 minutes)
+      "0 9 * * 1"     (every monday at 9am)
+      "0 0 1 * *"     (first day of month at midnight)
+    
+    Examples:
+      nagatha celery task schedule nagatha.system.health_check "every 5 minutes"
+      nagatha celery task schedule nagatha.system.backup_database "every day at 2am"
+      nagatha celery task schedule nagatha.system.cleanup_logs "0 3 * * *"
+    """
+    try:
+        from nagatha_assistant.core.scheduler import schedule_task
+        from nagatha_assistant.core.celery_app import get_beat_schedule, initialize_celery
+        
+        # Initialize Celery if not already done
+        initialize_celery()
+        
+        # Parse arguments
+        task_args = json.loads(args) if args else None
+        task_kwargs = json.loads(kwargs) if kwargs else None
+        
+        # Schedule the task
+        scheduled_id = schedule_task(task_name, schedule, task_args, task_kwargs, task_id)
+        
+        # Debug: Check if task was actually added
+        beat_schedule = get_beat_schedule()
+        click.echo(f"✅ Task '{task_name}' scheduled with ID: {scheduled_id}")
+        click.echo(f"Schedule: {schedule}")
+        if debug:
+            click.echo(f"Debug: Beat schedule now contains {len(beat_schedule)} tasks")
+            if beat_schedule:
+                click.echo(f"Debug: Task IDs in beat schedule: {list(beat_schedule.keys())}")
+        
+    except Exception as e:
+        click.echo(f"❌ Failed to schedule task: {e}", err=True)
+        import traceback
+        click.echo(f"Traceback: {traceback.format_exc()}", err=True)
+
+
+@task.command("list")
+def celery_task_list():
+    """
+    List all currently scheduled tasks.
+    
+    Shows task ID, task name, schedule, and any arguments for each scheduled task.
+    Use this command to see what tasks are currently scheduled to run.
+    """
+    try:
+        from nagatha_assistant.core.scheduler import list_scheduled_tasks
+        from nagatha_assistant.core.celery_app import initialize_celery
+        
+        # Initialize Celery if not already done
+        initialize_celery()
+        
+        tasks = list_scheduled_tasks()
+        
+        if not tasks:
+            click.echo("No scheduled tasks found.")
+            return
+        
+        click.echo("Scheduled Tasks:")
+        click.echo("=" * 50)
+        
+        for task_id, task_info in tasks.items():
+            click.echo(f"Task ID: {task_id}")
+            click.echo(f"  Task: {task_info.get('task', 'Unknown')}")
+            click.echo(f"  Schedule: {task_info.get('schedule', 'Unknown')}")
+            if task_info.get('args'):
+                click.echo(f"  Args: {task_info['args']}")
+            if task_info.get('kwargs'):
+                click.echo(f"  Kwargs: {task_info['kwargs']}")
+            click.echo()
+        
+    except Exception as e:
+        click.echo(f"❌ Failed to list tasks: {e}", err=True)
+
+
+@task.command("cancel")
+@click.argument("task_id")
+def celery_task_cancel(task_id):
+    """
+    Cancel a scheduled task.
+    
+    TASK_ID: The ID of the task to cancel (get from 'nagatha celery task list')
+    
+    Examples:
+      nagatha celery task cancel health_check_20241201_143022
+      nagatha celery task cancel backup_daily_20241201_020000
+    """
+    try:
+        from nagatha_assistant.core.scheduler import cancel_task
+        from nagatha_assistant.core.celery_app import initialize_celery
+        
+        # Initialize Celery if not already done
+        initialize_celery()
+        
+        if cancel_task(task_id):
+            click.echo(f"✅ Task '{task_id}' cancelled successfully")
+        else:
+            click.echo(f"❌ Task '{task_id}' not found", err=True)
+        
+    except Exception as e:
+        click.echo(f"❌ Failed to cancel task: {e}", err=True)
+
+
+@task.command("clear")
+def celery_task_clear():
+    """
+    Clear all scheduled tasks.
+    
+    WARNING: This will remove ALL scheduled tasks. Use with caution.
+    Consider using 'nagatha celery task list' first to see what will be removed.
+    """
+    try:
+        from nagatha_assistant.core.scheduler import get_scheduler
+        from nagatha_assistant.core.celery_app import initialize_celery
+        
+        # Initialize Celery if not already done
+        initialize_celery()
+        
+        scheduler = get_scheduler()
+        scheduler.clear_all_tasks()
+        click.echo("✅ All scheduled tasks cleared")
+        
+    except Exception as e:
+        click.echo(f"❌ Failed to clear tasks: {e}", err=True)
+
+
+@task.command("reload")
+def celery_task_reload():
+    """
+    Reload the beat schedule from the schedule file.
+    
+    Useful for debugging or when the schedule file has been modified externally.
+    """
+    try:
+        from nagatha_assistant.core.celery_app import reload_beat_schedule, initialize_celery
+        
+        # Initialize Celery if not already done
+        initialize_celery()
+        
+        reload_beat_schedule()
+        click.echo("✅ Beat schedule reloaded from file")
+        
+    except Exception as e:
+        click.echo(f"❌ Failed to reload beat schedule: {e}", err=True)
+
+
+@task.command("history")
+@click.option("--limit", "-l", type=int, default=20, help="Maximum number of history entries to show")
+@click.option("--task-id", help="Filter by specific task ID")
+@click.option("--task-name", help="Filter by task name")
+@click.option("--status", type=click.Choice(["completed", "failed", "started", "all"]), default="all", help="Filter by task status")
+@click.option("--format", "output_format", type=click.Choice(["table", "json", "detailed"]), default="table", help="Output format")
+def celery_task_history(limit, task_id, task_name, status, output_format):
+    """
+    Show task execution history.
+    
+    Displays the history of task executions including status, timing, and results.
+    """
+    try:
+        from nagatha_assistant.core.celery_app import initialize_celery, celery_app
+        from nagatha_assistant.core.memory import get_memory_manager
+        import asyncio
+        
+        # Initialize Celery if not already done
+        initialize_celery()
+        
+        async def _get_history():
+            memory = get_memory_manager()
+            
+            # Get task history from memory
+            history_data = await memory.get('system', 'task_history', default=[])
+            
+            if not history_data:
+                click.echo("No task history found.")
+                return
+            
+            # Filter history based on options
+            filtered_history = []
+            for entry in history_data:
+                # Filter by task ID
+                if task_id and entry.get('task_id') != task_id:
+                    continue
+                
+                # Filter by task name
+                if task_name and entry.get('task_name') != task_name:
+                    continue
+                
+                # Filter by status
+                if status != "all":
+                    entry_status = entry.get('status', 'unknown')
+                    if status == "completed" and entry_status != "completed":
+                        continue
+                    elif status == "failed" and entry_status != "failed":
+                        continue
+                    elif status == "started" and entry_status != "started":
+                        continue
+                
+                filtered_history.append(entry)
+            
+            # Sort by timestamp (newest first)
+            filtered_history.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+            
+            # Limit results
+            if limit > 0:
+                filtered_history = filtered_history[:limit]
+            
+            if not filtered_history:
+                click.echo("No matching task history entries found.")
+                return
+            
+            # Display results
+            if output_format == "json":
+                import json
+                click.echo(json.dumps(filtered_history, indent=2, default=str))
+            elif output_format == "detailed":
+                _display_detailed_history(filtered_history)
+            else:  # table format
+                _display_table_history(filtered_history)
+        
+        asyncio.run(_get_history())
+        
+    except Exception as e:
+        click.echo(f"❌ Failed to get task history: {e}", err=True)
+
+
+def _display_table_history(history):
+    """Display task history in table format."""
+    click.echo("Task Execution History:")
+    click.echo("=" * 100)
+    click.echo(f"{'Task ID':<20} {'Task Name':<25} {'Status':<10} {'Started':<20} {'Duration':<10} {'Result'}")
+    click.echo("-" * 100)
+    
+    for entry in history:
+        task_id = entry.get('task_id', 'N/A')[:19]
+        task_name = entry.get('task_name', 'N/A')[:24]
+        status = entry.get('status', 'unknown')[:9]
+        
+        # Format timestamp
+        timestamp = entry.get('timestamp', 'N/A')
+        if timestamp != 'N/A':
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                started = dt.strftime('%Y-%m-%d %H:%M:%S')
+            except:
+                started = timestamp[:19]
+        else:
+            started = 'N/A'
+        
+        # Calculate duration
+        duration = entry.get('duration', 'N/A')
+        if duration and duration != 'N/A':
+            if isinstance(duration, (int, float)):
+                if duration < 60:
+                    duration_str = f"{duration:.1f}s"
+                elif duration < 3600:
+                    duration_str = f"{duration/60:.1f}m"
+                else:
+                    duration_str = f"{duration/3600:.1f}h"
+            else:
+                duration_str = str(duration)
+        else:
+            duration_str = 'N/A'
+        
+        # Format result
+        result = entry.get('result', 'N/A')
+        if isinstance(result, dict):
+            result_str = str(result.get('status', 'N/A'))[:20]
+        elif isinstance(result, str):
+            result_str = result[:20]
+        else:
+            result_str = str(result)[:20]
+        
+        if len(result_str) > 20:
+            result_str = result_str[:17] + "..."
+        
+        click.echo(f"{task_id:<20} {task_name:<25} {status:<10} {started:<20} {duration_str:<10} {result_str}")
+
+
+def _display_detailed_history(history):
+    """Display task history in detailed format."""
+    click.echo("Task Execution History (Detailed):")
+    click.echo("=" * 80)
+    
+    for i, entry in enumerate(history, 1):
+        click.echo(f"\n{i}. Task ID: {entry.get('task_id', 'N/A')}")
+        click.echo(f"   Task Name: {entry.get('task_name', 'N/A')}")
+        click.echo(f"   Status: {entry.get('status', 'unknown')}")
+        click.echo(f"   Started: {entry.get('timestamp', 'N/A')}")
+        
+        duration = entry.get('duration')
+        if duration:
+            click.echo(f"   Duration: {duration}")
+        
+        worker = entry.get('worker')
+        if worker:
+            click.echo(f"   Worker: {worker}")
+        
+        result = entry.get('result')
+        if result:
+            click.echo(f"   Result: {result}")
+        
+        error = entry.get('error')
+        if error:
+            click.echo(f"   Error: {error}")
+        
+        click.echo("-" * 40)
+
+
+@task.command("clear-history")
+@click.option("--confirm", is_flag=True, help="Confirm clearing task history")
+def celery_task_clear_history(confirm):
+    """
+    Clear task execution history.
+    
+    WARNING: This will remove ALL task history. Use with caution.
+    """
+    try:
+        from nagatha_assistant.core.memory import get_memory_manager
+        import asyncio
+        
+        if not confirm:
+            click.echo("❌ Use --confirm to clear task history")
+            return
+        
+        async def _clear_history():
+            memory = get_memory_manager()
+            await memory.set('system', 'task_history', [])
+            click.echo("✅ Task history cleared")
+        
+        asyncio.run(_clear_history())
+        
+    except Exception as e:
+        click.echo(f"❌ Failed to clear task history: {e}", err=True)
+
+
+@task.command("available")
+def celery_task_available():
+    """
+    List all available tasks that can be scheduled.
+    
+    Shows the task names that can be used with the schedule command.
+    Task names follow the pattern: nagatha.<category>.<task_name>
+    
+    Examples:
+      nagatha.system.health_check     - System health monitoring
+      nagatha.system.backup_database  - Database backup
+      nagatha.system.cleanup_logs     - Log file cleanup
+      nagatha.memory.backup           - Memory data backup
+      nagatha.notification.send       - Send notifications
+    """
+    try:
+        from nagatha_assistant.plugins.tasks import list_available_tasks
+        
+        tasks = list_available_tasks()
+        
+        click.echo("Available Tasks:")
+        click.echo("=" * 30)
+        
+        for task_name in sorted(tasks):
+            click.echo(f"• {task_name}")
+        
+    except Exception as e:
+        click.echo(f"❌ Failed to list available tasks: {e}", err=True)
+
+
+@celery.command("test")
+def celery_test():
+    """Test Celery functionality."""
+    try:
+        from nagatha_assistant.plugins.tasks import system_health_check
+        
+        click.echo("Testing Celery functionality...")
+        result = system_health_check.delay()
+        
+        click.echo(f"✅ Test task submitted with ID: {result.id}")
+        click.echo("Check worker logs for task execution.")
+        
+    except Exception as e:
+        click.echo(f"❌ Celery test failed: {e}", err=True)
+
+
+@celery.command("health")
+def celery_health():
+    """Check Celery health."""
+    try:
+        from nagatha_assistant.plugins.tasks import system_health_check
+        
+        click.echo("Checking Celery health...")
+        result = system_health_check.delay()
+        
+        click.echo(f"✅ Health check submitted with ID: {result.id}")
+        click.echo("Check worker logs for health check results.")
+        
+    except Exception as e:
+        click.echo(f"❌ Health check failed: {e}", err=True)
 
 
 if __name__ == "__main__":

@@ -31,6 +31,26 @@ from .plugin import (
     PluginEventTypes
 )
 
+from .celery_app import (
+    celery_app,
+    get_celery_app,
+    configure_celery,
+    add_periodic_task,
+    remove_periodic_task,
+    get_beat_schedule,
+    clear_beat_schedule
+)
+
+from .scheduler import (
+    TaskScheduler,
+    get_scheduler,
+    schedule_task,
+    schedule_one_time,
+    schedule_recurring,
+    cancel_task,
+    list_scheduled_tasks
+)
+
 
 async def initialize_plugin_system():
     """Initialize the plugin system with built-in plugins."""
@@ -87,5 +107,20 @@ __all__ = [
     'PluginCommand',
     'PluginState',
     'PluginEventTypes',
-    'initialize_plugin_system'
+    'initialize_plugin_system',
+    # Celery system
+    'celery_app',
+    'get_celery_app',
+    'configure_celery',
+    'add_periodic_task',
+    'remove_periodic_task',
+    'get_beat_schedule',
+    'clear_beat_schedule',
+    'TaskScheduler',
+    'get_scheduler',
+    'schedule_task',
+    'schedule_one_time',
+    'schedule_recurring',
+    'cancel_task',
+    'list_scheduled_tasks'
 ]

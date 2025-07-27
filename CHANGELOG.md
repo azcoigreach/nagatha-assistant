@@ -1,3 +1,27 @@
+## [0.10.0] - 2025-07-26
+
+### Added
+- **Celery Task Scheduling System**: Complete distributed task execution and scheduling capabilities
+  - Redis-based message broker and result backend
+  - Celery Beat scheduler for recurring and one-time tasks
+  - Natural language time parsing (e.g., "every 5 minutes", "tomorrow at 2pm")
+  - Task persistence across application restarts
+  - Comprehensive CLI commands for service management and task control
+  - Flower web-based monitoring interface
+  - Task execution history with detailed tracking
+  - Integration with existing event bus and plugin systems
+  - Built-in system tasks (health checks, backups, cleanup, notifications)
+
+### Changed
+- Enhanced CLI with new `celery` command group for task management
+- Extended plugin system with TaskManagerPlugin for programmatic task control
+- Updated requirements.txt with Celery, Redis, and related dependencies
+
+### Fixed
+- Event bus integration for task lifecycle events
+- Natural language parsing for time specifications including seconds
+- Task persistence and schedule reloading functionality
+
 ## [0.9.0] - 2025-07-26
 
 ### Current Application State
