@@ -10,7 +10,7 @@ import json
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
-from ..core.plugin import BasePlugin, PluginConfig
+from ..core.plugin import SimplePlugin, PluginConfig
 from ..core.scheduler import get_scheduler, schedule_task, cancel_task, list_scheduled_tasks
 from ..core.event import Event, StandardEventTypes, create_system_event
 from ..plugins.tasks import list_available_tasks, get_task
@@ -18,7 +18,7 @@ from ..plugins.tasks import list_available_tasks, get_task
 logger = logging.getLogger(__name__)
 
 
-class TaskManagerPlugin(BasePlugin):
+class TaskManagerPlugin(SimplePlugin):
     """Plugin for managing scheduled tasks."""
     
     PLUGIN_NAME = "Task Manager"

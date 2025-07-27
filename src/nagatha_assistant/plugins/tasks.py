@@ -115,9 +115,20 @@ def system_health_check(self):
             'timestamp': datetime.now().isoformat()
         }
         
-        # Store in memory
-        memory = get_memory_manager()
-        memory.set('system', 'health_check', health_data)
+        # Store in memory (using sync version to avoid async issues in Celery task)
+        try:
+            memory = get_memory_manager()
+            # Use the sync version to avoid async issues in Celery tasks
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                # If we have a running loop, create a task
+                asyncio.create_task(memory.set('system', 'health_check', health_data))
+            except RuntimeError:
+                # No running loop, run in a new event loop
+                asyncio.run(memory.set('system', 'health_check', health_data))
+        except Exception as e:
+            logger.warning(f"Failed to store health check data: {e}")
         
         duration = time.time() - start_time
         

@@ -23,8 +23,9 @@ from celery.schedules import crontab, timedelta as celery_timedelta
 from nagatha_assistant.core.celery_app import (
     celery_app, add_periodic_task, remove_periodic_task, 
     clear_beat_schedule, get_beat_schedule, initialize_celery,
-    reload_beat_schedule, health_check
+    reload_beat_schedule
 )
+from nagatha_assistant.plugins.tasks import system_health_check
 from nagatha_assistant.core.scheduler import (
     TaskScheduler, get_scheduler, schedule_task, 
     schedule_one_time, schedule_recurring, cancel_task, 
@@ -148,8 +149,8 @@ class TestCeleryApp:
              patch('psutil.virtual_memory', return_value=Mock(percent=50.0)), \
              patch('psutil.disk_usage', return_value=Mock(percent=30.0)):
             
-            # Execute the health check
-            result = health_check(mock_task)
+            # Execute the health check by calling the underlying function
+            result = system_health_check.run()
             
             # Verify the result structure
             assert isinstance(result, dict)
@@ -215,15 +216,15 @@ class TestTaskScheduler:
         # Test "every day at X"
         result = self.scheduler.parse_natural_time("every day at 2pm")
         assert isinstance(result, crontab)
-        assert result.hour == 14  # 2pm in 24-hour format
-        assert result.minute == 0
+        assert 14 in result.hour  # 2pm in 24-hour format
+        assert 0 in result.minute
     
     def test_parse_natural_time_cron(self):
         """Test parsing cron-like expressions."""
         result = self.scheduler.parse_natural_time("0 2 * * *")
         assert isinstance(result, crontab)
-        assert result.hour == 2
-        assert result.minute == 0
+        assert 2 in result.hour
+        assert 0 in result.minute
     
     def test_parse_natural_time_specific_datetime(self):
         """Test parsing specific datetime strings."""
@@ -412,62 +413,76 @@ class TestTaskHistory:
     @pytest.mark.asyncio
     async def test_record_task_history(self):
         """Test recording task execution history."""
-        memory = get_memory_manager()
+        from unittest.mock import Mock, patch
         
-        # Clear existing history
-        await memory.set('system', 'task_history', [])
+        # Mock the memory manager to avoid database dependencies
+        mock_memory = Mock()
+        mock_memory.get.return_value = []
+        mock_memory.set.return_value = None
         
-        # Record a task history entry
-        from nagatha_assistant.plugins.tasks import record_task_history
-        
-        await record_task_history(
-            task_id="test_task_123",
-            task_name="nagatha.system.health_check",
-            status="completed",
-            result={"status": "healthy"},
-            duration=1.5,
-            worker="test_worker"
-        )
-        
-        # Retrieve history
-        history = await memory.get('system', 'task_history', default=[])
-        
-        # Verify history was recorded
-        assert len(history) == 1
-        entry = history[0]
-        assert entry['task_id'] == "test_task_123"
-        assert entry['task_name'] == "nagatha.system.health_check"
-        assert entry['status'] == "completed"
-        assert entry['result'] == {"status": "healthy"}
-        assert entry['duration'] == 1.5
-        assert entry['worker'] == "test_worker"
-        assert 'timestamp' in entry
+        with patch('nagatha_assistant.plugins.tasks.get_memory_manager', return_value=mock_memory):
+            # Record a task history entry
+            from nagatha_assistant.plugins.tasks import record_task_history
+            
+            await record_task_history(
+                task_id="test_task_123",
+                task_name="nagatha.system.health_check",
+                status="completed",
+                result={"status": "healthy"},
+                duration=1.5,
+                worker="test_worker"
+            )
+            
+            # Verify memory.set was called with the correct data
+            mock_memory.set.assert_called_once()
+            call_args = mock_memory.set.call_args
+            assert call_args[0][0] == 'system'  # section
+            assert call_args[0][1] == 'task_history'  # key
+            
+            # Verify the history data
+            history_data = call_args[0][2]  # value
+            assert len(history_data) == 1
+            entry = history_data[0]
+            assert entry['task_id'] == "test_task_123"
+            assert entry['task_name'] == "nagatha.system.health_check"
+            assert entry['status'] == "completed"
+            assert entry['result'] == {"status": "healthy"}
+            assert entry['duration'] == 1.5
+            assert entry['worker'] == "test_worker"
+            assert 'timestamp' in entry
     
     @pytest.mark.asyncio
     async def test_history_limit_enforcement(self):
         """Test that history is limited to prevent memory bloat."""
-        memory = get_memory_manager()
+        from unittest.mock import Mock, patch
         
-        # Clear existing history
-        await memory.set('system', 'task_history', [])
+        # Mock the memory manager to avoid database dependencies
+        mock_memory = Mock()
+        mock_memory.get.return_value = []
+        mock_memory.set.return_value = None
         
-        from nagatha_assistant.plugins.tasks import record_task_history
-        
-        # Add more than 1000 entries
-        for i in range(1005):
-            await record_task_history(
-                task_id=f"task_{i}",
-                task_name="nagatha.system.health_check",
-                status="completed"
-            )
-        
-        # Retrieve history
-        history = await memory.get('system', 'task_history', default=[])
-        
-        # Verify only last 1000 entries are kept
-        assert len(history) == 1000
-        assert history[0]['task_id'] == "task_5"  # First entry should be task_5
-        assert history[-1]['task_id'] == "task_1004"  # Last entry should be task_1004
+        with patch('nagatha_assistant.plugins.tasks.get_memory_manager', return_value=mock_memory):
+            from nagatha_assistant.plugins.tasks import record_task_history
+            
+            # Add more than 1000 entries
+            for i in range(1005):
+                await record_task_history(
+                    task_id=f"task_{i}",
+                    task_name="nagatha.system.health_check",
+                    status="completed"
+                )
+            
+            # Verify memory.set was called multiple times
+            assert mock_memory.set.call_count >= 1000
+            
+            # Get the last call to verify the final history
+            last_call_args = mock_memory.set.call_args
+            history_data = last_call_args[0][2]  # value
+            
+            # Verify only last 1000 entries are kept
+            assert len(history_data) == 1000
+            assert history_data[0]['task_id'] == "task_5"  # First entry should be task_5
+            assert history_data[-1]['task_id'] == "task_1004"  # Last entry should be task_1004
 
 
 class TestEventIntegration:
@@ -475,37 +490,49 @@ class TestEventIntegration:
     
     def test_task_events_emitted(self):
         """Test that task events are properly emitted."""
-        event_bus = get_event_bus()
-        events_received = []
+        from unittest.mock import Mock, patch
         
-        # Create event handler
-        def on_task_event(event):
-            events_received.append(event)
+        # Mock the event bus to avoid async issues
+        mock_event_bus = Mock()
+        mock_event_bus.publish_sync.return_value = None
         
-        # Register event handler
-        event_bus.subscribe(StandardEventTypes.TASK_CREATED, on_task_event)
-        event_bus.subscribe(StandardEventTypes.TASK_UPDATED, on_task_event)
-        event_bus.subscribe(StandardEventTypes.TASK_COMPLETED, on_task_event)
-        
-        # Schedule a task (should emit TASK_CREATED)
-        scheduler = get_scheduler()
-        task_id = scheduler.schedule_task("nagatha.system.health_check", "every 5 minutes")
-        
-        # Verify TASK_CREATED event was emitted
-        assert len(events_received) >= 1
-        created_event = events_received[0]
-        assert created_event.event_type == StandardEventTypes.TASK_CREATED
-        assert created_event.data['task_id'] == task_id
-        assert created_event.data['task_name'] == "nagatha.system.health_check"
-        
-        # Cancel the task (should emit TASK_UPDATED)
-        scheduler.cancel_task(task_id)
-        
-        # Verify TASK_UPDATED event was emitted
-        assert len(events_received) >= 2
-        updated_event = events_received[1]
-        assert updated_event.event_type == StandardEventTypes.TASK_UPDATED
-        assert updated_event.data['task_id'] == task_id
+        with patch('nagatha_assistant.core.scheduler.get_event_bus', return_value=mock_event_bus):
+            # Schedule a task (should emit TASK_CREATED)
+            scheduler = get_scheduler()
+            task_id = scheduler.schedule_task("nagatha.system.health_check", "every 5 minutes")
+            
+            # Verify TASK_CREATED event was emitted
+            mock_event_bus.publish_sync.assert_called()
+            call_args = mock_event_bus.publish_sync.call_args_list
+            
+            # Find the TASK_CREATED event
+            created_event = None
+            for call in call_args:
+                event = call[0][0]  # First argument is the event
+                if event.event_type == StandardEventTypes.TASK_CREATED:
+                    created_event = event
+                    break
+            
+            assert created_event is not None
+            assert created_event.data['task_id'] == task_id
+            assert created_event.data['task_name'] == "nagatha.system.health_check"
+            
+            # Cancel the task (should emit TASK_UPDATED)
+            scheduler.cancel_task(task_id)
+            
+            # Verify TASK_UPDATED event was emitted
+            call_args = mock_event_bus.publish_sync.call_args_list
+            
+            # Find the TASK_UPDATED event
+            updated_event = None
+            for call in call_args:
+                event = call[0][0]  # First argument is the event
+                if event.event_type == StandardEventTypes.TASK_UPDATED:
+                    updated_event = event
+                    break
+            
+            assert updated_event is not None
+            assert updated_event.data['task_id'] == task_id
         assert updated_event.data['status'] == 'cancelled'
 
 
@@ -517,39 +544,25 @@ class TestCLIIntegration:
         from nagatha_assistant.cli import cli
         
         # Check that celery group exists
-        celery_group = None
-        for command in cli.commands:
-            if command.name == 'celery':
-                celery_group = command
-                break
-        
+        assert 'celery' in cli.list_commands(None)
+        celery_group = cli.get_command(None, 'celery')
         assert celery_group is not None
-        assert hasattr(celery_group, 'commands')
     
     def test_service_commands_exist(self):
         """Test that service management commands exist."""
         from nagatha_assistant.cli import cli
         
         # Find celery group
-        celery_group = None
-        for command in cli.commands:
-            if command.name == 'celery':
-                celery_group = command
-                break
-        
+        celery_group = cli.get_command(None, 'celery')
         assert celery_group is not None
         
         # Check for service subcommands
-        service_command = None
-        for cmd in celery_group.commands:
-            if cmd.name == 'service':
-                service_command = cmd
-                break
-        
+        assert 'service' in celery_group.list_commands(None)
+        service_command = celery_group.get_command(None, 'service')
         assert service_command is not None
         
         # Check for service subcommands
-        service_subcommands = [cmd.name for cmd in service_command.commands]
+        service_subcommands = service_command.list_commands(None)
         assert 'start' in service_subcommands
         assert 'stop' in service_subcommands
         assert 'status' in service_subcommands
@@ -559,25 +572,16 @@ class TestCLIIntegration:
         from nagatha_assistant.cli import cli
         
         # Find celery group
-        celery_group = None
-        for command in cli.commands:
-            if command.name == 'celery':
-                celery_group = command
-                break
-        
+        celery_group = cli.get_command(None, 'celery')
         assert celery_group is not None
         
         # Check for task subcommands
-        task_command = None
-        for cmd in celery_group.commands:
-            if cmd.name == 'task':
-                task_command = cmd
-                break
-        
+        assert 'task' in celery_group.list_commands(None)
+        task_command = celery_group.get_command(None, 'task')
         assert task_command is not None
         
         # Check for task subcommands
-        task_subcommands = [cmd.name for cmd in task_command.commands]
+        task_subcommands = task_command.list_commands(None)
         assert 'schedule' in task_subcommands
         assert 'list' in task_subcommands
         assert 'cancel' in task_subcommands
@@ -617,9 +621,9 @@ class TestTaskPlugins:
         
         # Create plugin config
         config = PluginConfig(
-            plugin_name="task_manager",
+            name="task_manager",
             enabled=True,
-            config_data={}
+            config={}
         )
         
         # Create plugin instance
@@ -643,6 +647,10 @@ class TestPersistence:
         # Set up temporary schedule file
         schedule_file = tmp_path / "test_schedule.json"
         os.environ['CELERY_BEAT_SCHEDULE_FILE'] = str(schedule_file)
+        
+        # Update Celery app configuration to use the new schedule file
+        from nagatha_assistant.core.celery_app import celery_app
+        celery_app.conf.beat_schedule_filename = str(schedule_file)
         
         # Clear existing schedule
         clear_beat_schedule()
@@ -673,6 +681,10 @@ class TestPersistence:
         # Set up temporary schedule file
         schedule_file = tmp_path / "test_schedule.json"
         os.environ['CELERY_BEAT_SCHEDULE_FILE'] = str(schedule_file)
+        
+        # Update Celery app configuration to use the new schedule file
+        from nagatha_assistant.core.celery_app import celery_app
+        celery_app.conf.beat_schedule_filename = str(schedule_file)
         
         # Clear and add a task
         clear_beat_schedule()

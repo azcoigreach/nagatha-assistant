@@ -124,17 +124,45 @@ class TaskScheduler:
                 day_num = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].index(day)
                 return crontab(day_of_week=day_num, hour=parsed_time.hour, minute=parsed_time.minute)
         
-        # Handle specific date/time
-        parsed_time, _ = cal.parseDT(time_spec)
-        if parsed_time:
-            return parsed_time
-        
         # Handle cron-like syntax
         if re.match(r'^\*/\d+ \* \* \* \*$', time_spec):
             parts = time_spec.split()
             if len(parts) == 5:
                 minute_interval = int(parts[0].split('/')[1])
                 return celery_timedelta(minutes=minute_interval)
+        
+        # Handle standard cron expressions (minute hour day month day_of_week)
+        cron_pattern = r'^(\*|\d+)(/\d+)? (\*|\d+)(/\d+)? (\*|\d+)(/\d+)? (\*|\d+)(/\d+)? (\*|\d+)(/\d+)?$'
+        if re.match(cron_pattern, time_spec):
+            parts = time_spec.split()
+            if len(parts) == 5:
+                minute, hour, day, month, day_of_week = parts
+                
+                # Parse each field
+                def parse_cron_field(field):
+                    if field == '*':
+                        return '*'  # Return '*' for wildcard
+                    if '/' in field:
+                        base, step = field.split('/')
+                        if base == '*':
+                            return field  # Return the full expression for step ranges
+                        else:
+                            return int(base)
+                    else:
+                        return int(field)
+                
+                return crontab(
+                    minute=parse_cron_field(minute),
+                    hour=parse_cron_field(hour),
+                    day_of_month=parse_cron_field(day),
+                    month_of_year=parse_cron_field(month),
+                    day_of_week=parse_cron_field(day_of_week)
+                )
+        
+        # Handle specific date/time
+        parsed_time, _ = cal.parseDT(time_spec)
+        if parsed_time:
+            return parsed_time
         
         raise ValueError(f"Could not parse time specification: {time_spec}")
     
@@ -243,23 +271,26 @@ class TaskScheduler:
         Returns:
             True if task was cancelled, False if not found
         """
-        try:
-            remove_periodic_task(task_id)
-            
-            # Emit event
-            self.event_bus.publish_sync(create_system_event(
-                StandardEventTypes.TASK_UPDATED,
-                {
-                    'task_id': task_id,
-                    'status': 'cancelled'
-                }
-            ))
-            
-            logger.info(f"Cancelled task '{task_id}'")
-            return True
-        except KeyError:
+        # Check if task exists
+        from .celery_app import get_beat_schedule
+        schedule = get_beat_schedule()
+        if task_id not in schedule:
             logger.warning(f"Task '{task_id}' not found for cancellation")
             return False
+        
+        remove_periodic_task(task_id)
+        
+        # Emit event
+        self.event_bus.publish_sync(create_system_event(
+            StandardEventTypes.TASK_UPDATED,
+            {
+                'task_id': task_id,
+                'status': 'cancelled'
+            }
+        ))
+        
+        logger.info(f"Cancelled task '{task_id}'")
+        return True
     
     def list_scheduled_tasks(self) -> Dict[str, Any]:
         """
