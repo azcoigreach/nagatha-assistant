@@ -533,7 +533,7 @@ class TestEventIntegration:
             
             assert updated_event is not None
             assert updated_event.data['task_id'] == task_id
-        assert updated_event.data['status'] == 'cancelled'
+            assert updated_event.data['status'] == 'cancelled'
 
 
 class TestCLIIntegration:
