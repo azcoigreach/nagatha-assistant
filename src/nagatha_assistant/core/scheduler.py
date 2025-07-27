@@ -79,85 +79,21 @@ class TaskScheduler:
         
         # Handle "every X seconds/minutes/hours/days"
         if time_spec.startswith('every '):
-            match = re.match(r'every (\d+) (second|minute|hour|day|week)s?', time_spec)
-            if match:
-                amount = int(match.group(1))
-                unit = match.group(2)
-                if unit == 'second':
-                    return celery_timedelta(seconds=amount)
-                elif unit == 'minute':
-                    return celery_timedelta(minutes=amount)
-                elif unit == 'hour':
-                    return celery_timedelta(hours=amount)
-                elif unit == 'day':
-                    return celery_timedelta(days=amount)
-                elif unit == 'week':
-                    return celery_timedelta(weeks=amount)
-            
-            # Also handle "every X secs" format
-            match = re.match(r'every (\d+) secs?', time_spec)
-            if match:
-                amount = int(match.group(1))
-                return celery_timedelta(seconds=amount)
-            
-            # Also handle "every X mins" format
-            match = re.match(r'every (\d+) mins?', time_spec)
-            if match:
-                amount = int(match.group(1))
-                return celery_timedelta(minutes=amount)
+            return self._parse_every_format(time_spec)
         
-        # Handle "every day at X"
         if time_spec.startswith('every day at '):
-            time_part = time_spec.replace('every day at ', '')
-            parsed_time, _ = cal.parseDT(time_part)
-            if parsed_time:
-                return crontab(hour=parsed_time.hour, minute=parsed_time.minute)
+            return self._parse_every_day_at_format(time_spec)
         
-        # Handle "every X at Y"
         day_pattern = r'every (monday|tuesday|wednesday|thursday|friday|saturday|sunday) at (.+)'
-        day_match = re.match(day_pattern, time_spec)
-        if day_match:
-            day = day_match.group(1)
-            time_part = day_match.group(2)
-            parsed_time, _ = cal.parseDT(time_part)
-            if parsed_time:
-                day_num = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].index(day)
-                return crontab(day_of_week=day_num, hour=parsed_time.hour, minute=parsed_time.minute)
+        if re.match(day_pattern, time_spec):
+            return self._parse_every_day_at_specific_time_format(time_spec)
         
-        # Handle cron-like syntax
         if re.match(r'^\*/\d+ \* \* \* \*$', time_spec):
-            parts = time_spec.split()
-            if len(parts) == 5:
-                minute_interval = int(parts[0].split('/')[1])
-                return celery_timedelta(minutes=minute_interval)
+            return self._parse_cron_like_syntax(time_spec)
         
-        # Handle standard cron expressions (minute hour day month day_of_week)
         cron_pattern = r'^(\*|\d+)(/\d+)? (\*|\d+)(/\d+)? (\*|\d+)(/\d+)? (\*|\d+)(/\d+)? (\*|\d+)(/\d+)?$'
         if re.match(cron_pattern, time_spec):
-            parts = time_spec.split()
-            if len(parts) == 5:
-                minute, hour, day, month, day_of_week = parts
-                
-                # Parse each field
-                def parse_cron_field(field):
-                    if field == '*':
-                        return '*'  # Return '*' for wildcard
-                    if '/' in field:
-                        base, step = field.split('/')
-                        if base == '*':
-                            return field  # Return the full expression for step ranges
-                        else:
-                            return int(base)
-                    else:
-                        return int(field)
-                
-                return crontab(
-                    minute=parse_cron_field(minute),
-                    hour=parse_cron_field(hour),
-                    day_of_month=parse_cron_field(day),
-                    month_of_year=parse_cron_field(month),
-                    day_of_week=parse_cron_field(day_of_week)
-                )
+            return self._parse_standard_cron_expression(time_spec)
         
         # Handle specific date/time
         parsed_time, _ = cal.parseDT(time_spec)
