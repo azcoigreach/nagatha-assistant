@@ -1196,9 +1196,10 @@ def celery_task_schedule(task_name, schedule, args, kwargs, task_id):
         beat_schedule = get_beat_schedule()
         click.echo(f"✅ Task '{task_name}' scheduled with ID: {scheduled_id}")
         click.echo(f"Schedule: {schedule}")
-        click.echo(f"Debug: Beat schedule now contains {len(beat_schedule)} tasks")
-        if beat_schedule:
-            click.echo(f"Debug: Task IDs in beat schedule: {list(beat_schedule.keys())}")
+        if debug:
+            click.echo(f"Debug: Beat schedule now contains {len(beat_schedule)} tasks")
+            if beat_schedule:
+                click.echo(f"Debug: Task IDs in beat schedule: {list(beat_schedule.keys())}")
         
     except Exception as e:
         click.echo(f"❌ Failed to schedule task: {e}", err=True)
