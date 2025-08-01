@@ -135,42 +135,80 @@ def mcp_status():
     Show the status of MCP servers and available tools.
     """
     async def _show_status():
-        from nagatha_assistant.core.agent import get_mcp_status
-        status = await get_mcp_status()
+        import asyncio
+        import json
+        import os
         
-        click.echo("=== MCP Status ===")
-        click.echo(f"Initialized: {status.get('initialized', False)}")
-        
-        if 'error' in status:
-            click.echo(f"Error: {status['error']}", err=True)
-            return
-        
-        click.echo("\n=== Servers ===")
-        for server_name, server_info in status.get('servers', {}).items():
-            connected = server_info.get('connected', False)
-            config = server_info.get('config')
-            tools = server_info.get('tools', [])
+        try:
+            # First, just show the configuration without trying to initialize
+            config_path = "mcp.json"
+            if not os.path.exists(config_path):
+                click.echo("❌ No MCP configuration file found (mcp.json)")
+                return
             
-            status_icon = "✓" if connected else "✗"
-            click.echo(f"{status_icon} {server_name} ({config.transport if config else 'unknown'})")
+            click.echo("=== MCP Configuration ===")
+            with open(config_path, 'r') as f:
+                config = json.load(f)
             
-            if config:
-                if config.command:
-                    click.echo(f"    Command: {config.command} {' '.join(config.args or [])}")
-                if config.url:
-                    click.echo(f"    URL: {config.url}")
+            servers = config.get("mcpServers", {})
+            if not servers:
+                click.echo("No MCP servers configured in mcp.json")
+                return
             
-            if tools:
-                click.echo(f"    Tools: {', '.join(tools)}")
-            click.echo()
-        
-        click.echo("=== Available Tools ===")
-        tools = status.get('tools', [])
-        if tools:
-            for tool in tools:
-                click.echo(f"• {tool['name']} ({tool['server']}): {tool['description']}")
-        else:
-            click.echo("No tools available")
+            click.echo(f"Configured servers: {len(servers)}")
+            for name, server_config in servers.items():
+                if isinstance(server_config, str) or name.startswith("_"):
+                    continue  # Skip comments and disabled entries
+                
+                transport = server_config.get("transport", "stdio")
+                command = server_config.get("command", "unknown")
+                click.echo(f"• {name} ({transport}): {command}")
+                if server_config.get("args"):
+                    args_str = " ".join(server_config["args"])
+                    click.echo(f"  Args: {args_str}")
+            
+            # Now try to get actual status with timeout
+            click.echo("\n=== Testing Connections ===")
+            try:
+                from nagatha_assistant.core.agent import get_mcp_status
+                status = await asyncio.wait_for(get_mcp_status(), timeout=10.0)
+                
+                if 'error' in status:
+                    click.echo(f"❌ Error: {status['error']}")
+                    return
+                
+                servers = status.get('servers', {})
+                tools = status.get('tools', [])
+                
+                connected_count = sum(1 for info in servers.values() if info.get('connected', False))
+                click.echo(f"Connected servers: {connected_count}/{len(servers)}")
+                click.echo(f"Available tools: {len(tools)}")
+                
+                for server_name, server_info in servers.items():
+                    connected = server_info.get('connected', False)
+                    status_icon = "✓" if connected else "✗"
+                    click.echo(f"{status_icon} {server_name}")
+                    
+                    if not connected and server_info.get('error'):
+                        click.echo(f"  Error: {server_info['error']}")
+                
+                if tools:
+                    click.echo("\n=== Available Tools ===")
+                    for tool in tools[:10]:  # Show first 10 tools
+                        click.echo(f"• {tool['name']} ({tool['server']}): {tool['description']}")
+                    if len(tools) > 10:
+                        click.echo(f"... and {len(tools) - 10} more tools")
+                        
+            except asyncio.TimeoutError:
+                click.echo("❌ Connection test timed out after 10 seconds")
+                click.echo("💡 Some MCP servers may be slow to respond or have connection issues")
+                click.echo("💡 You can still use Nagatha without MCP servers")
+            except Exception as e:
+                click.echo(f"❌ Error testing connections: {e}")
+                click.echo("💡 You can still use Nagatha without MCP servers")
+                
+        except Exception as e:
+            click.echo(f"❌ Error getting MCP status: {e}", err=True)
     
     asyncio.run(_show_status())
 
@@ -181,13 +219,24 @@ def mcp_reload():
     """
     async def _reload():
         from nagatha_assistant.core.mcp_manager import shutdown_mcp_manager, get_mcp_manager
-        click.echo("Shutting down existing MCP connections...")
-        await shutdown_mcp_manager()
-        click.echo("Reloading MCP configuration...")
-        manager = await get_mcp_manager()
-        server_info = manager.get_server_info()
-        connected_servers = len([name for name, info in server_info.items() if info['connected']])
-        click.echo(f"Reloaded with {len(manager.get_available_tools())} tools from {connected_servers} servers")
+        import asyncio
+        
+        try:
+            click.echo("Shutting down existing MCP connections...")
+            await asyncio.wait_for(shutdown_mcp_manager(), timeout=10.0)
+            click.echo("Reloading MCP configuration...")
+            
+            # Add timeout to prevent hanging
+            manager = await asyncio.wait_for(get_mcp_manager(), timeout=30.0)
+            server_info = manager.get_server_info()
+            connected_servers = len([name for name, info in server_info.items() if info['connected']])
+            click.echo(f"Reloaded with {len(manager.get_available_tools())} tools from {connected_servers} servers")
+            
+        except asyncio.TimeoutError:
+            click.echo("❌ MCP reload timed out", err=True)
+            click.echo("💡 Some MCP servers may be slow to respond or have connection issues")
+        except Exception as e:
+            click.echo(f"❌ Error reloading MCP configuration: {e}", err=True)
     
     asyncio.run(_reload())
 
@@ -795,161 +844,761 @@ def discord_setup():
         click.echo("❌ Please configure DISCORD_BOT_TOKEN in your .env file to use the Discord bot")
 
 
-# Command to launch the Textual UI chat client
-@cli.command(name="run")
-def run():
-    """
-    Launch the Textual UI client for Nagatha.
-    """
-    async def _run_with_lifecycle():
-        from nagatha_assistant.core.agent import startup, shutdown, format_mcp_status_for_chat
-        from nagatha_assistant.ui import run_app
-        from nagatha_assistant.utils.logger import setup_logger_with_env_control
-        
-        # Set up enhanced logging
-        logger = setup_logger_with_env_control()
-        
-        try:
-            # Show configuration info
-            click.echo("Initializing Nagatha Assistant...")
-            
-            # Check for mcp.json
-            if os.path.exists("mcp.json"):
-                try:
-                    with open("mcp.json", 'r') as f:
-                        config = json.load(f)
-                    server_count = len(config.get("mcpServers", {}))
-                    click.echo(f"Found {server_count} MCP servers configured in mcp.json")
-                except Exception as e:
-                    click.echo(f"⚠️  Warning: Could not read mcp.json: {e}")
-            else:
-                click.echo("ℹ️  No mcp.json found - running without MCP servers")
-            
-            # Show timeout settings
-            conn_timeout = os.getenv("NAGATHA_MCP_CONNECTION_TIMEOUT", "5")
-            disc_timeout = os.getenv("NAGATHA_MCP_DISCOVERY_TIMEOUT", "3")
-            click.echo(f"Connection timeout: {conn_timeout}s, Discovery timeout: {disc_timeout}s")
-            
-            # Initialize MCP and database
-            click.echo("Connecting to MCP servers...")
-            init_summary = await startup()
-            
-            # Show initialization results
-            if init_summary['connected'] > 0:
-                click.echo(f"✅ Connected to {init_summary['connected']}/{init_summary['total_configured']} MCP servers")
-                click.echo(f"🔧 {init_summary['total_tools']} tools available")
-                if init_summary['connected_servers']:
-                    click.echo(f"Connected: {', '.join(init_summary['connected_servers'])}")
-                logger.info(f"Startup successful: {init_summary['connected']} servers, {init_summary['total_tools']} tools")
-            else:
-                click.echo(f"⚠️  No MCP servers connected")
-                if init_summary['total_configured'] > 0:
-                    click.echo(f"   ({init_summary['total_configured']} configured but failed)")
-                logger.warning("Startup completed but no MCP servers connected")
-            
-            if init_summary['failed_servers']:
-                click.echo("❌ Failed connections:")
-                for server_name, error in init_summary['failed_servers']:
-                    click.echo(f"   • {server_name}: {error}")
-            
-            click.echo("\nStarting Nagatha UI...")
-            
-            # Run the UI
-            await run_app()
-        except KeyboardInterrupt:
-            click.echo("\nShutting down Nagatha...")
-        except Exception as e:
-            click.echo(f"Error during startup: {e}", err=True)
-            logger.exception("Error during startup")
-        finally:
-            # Clean up MCP connections
-            try:
-                await shutdown()
-                click.echo("Shutdown complete.")
-            except Exception as e:
-                click.echo(f"Error during shutdown: {e}", err=True)
-                logger.exception("Error during shutdown")
-    
-    asyncio.run(_run_with_lifecycle())
-
-
-# Command to launch the enhanced Dashboard UI
+# Command to launch the unified Dashboard UI (main application)
 @cli.command(name="dashboard")
 def dashboard():
     """
-    Launch the enhanced Dashboard UI for Nagatha.
+    Launch the unified Nagatha Assistant Dashboard UI.
+    This is the main application interface that includes chat, monitoring, and management features.
+    
+    Requires the Nagatha server to be running.
+    Start the server with: nagatha server start
     """
-    async def _run_dashboard_with_lifecycle():
-        from nagatha_assistant.core.agent import startup, shutdown
-        from nagatha_assistant.ui.dashboard import run_dashboard
+    click.echo("❌ Dashboard UI has been removed from this version")
+    click.echo("💡 Use the CLI commands to interact with Nagatha:")
+    click.echo("   • nagatha chat --interactive")
+    click.echo("   • nagatha server status")
+    click.echo("   • nagatha memory stats")
+    click.echo("   • nagatha mcp status")
+    click.echo("   • nagatha celery service status")
+
+
+# Legacy command - redirects to dashboard
+@cli.command(name="run")
+def run():
+    """
+    Launch the legacy Textual Chat UI (deprecated).
+    
+    This command is deprecated. Use 'nagatha dashboard' for the unified interface.
+    """
+    click.echo("❌ Legacy Textual UI has been removed from this version")
+    click.echo("💡 Use the CLI commands to interact with Nagatha:")
+    click.echo("   • nagatha chat --interactive")
+    click.echo("   • nagatha server status")
+    click.echo("   • nagatha memory stats")
+    click.echo("   • nagatha mcp status")
+    click.echo("   • nagatha celery service status")
+
+
+@cli.command(name="chat")
+@click.option("--session-id", "-s", type=int, help="Use specific session ID")
+@click.option("--new", "-n", is_flag=True, help="Create new session")
+@click.option("--message", "-m", help="Send a single message and exit")
+@click.option("--interactive", "-i", is_flag=True, help="Start interactive chat mode")
+def chat(session_id, new, message, interactive):
+    """
+    Chat with Nagatha via command line.
+    
+    Requires the Nagatha server to be running.
+    Start the server with: nagatha server start
+    
+    Examples:
+        nagatha chat --new --message "Hello, how are you?"
+        nagatha chat --interactive
+        nagatha chat --session-id 5 --message "What's the weather like?"
+    """
+    async def _chat():
         from nagatha_assistant.utils.logger import setup_logger_with_env_control
+        import json
+        import os
+        import sys
         
-        # Set up enhanced logging
+        # Set up logging
         logger = setup_logger_with_env_control()
         
         try:
-            # Show configuration info
-            click.echo("Initializing Nagatha Assistant Dashboard...")
+            # Check for running server
+            status_file = "/tmp/nagatha_server_status.json"
+            if not os.path.exists(status_file):
+                click.echo("❌ Nagatha server is not running!")
+                click.echo("💡 Start the server with: nagatha server start")
+                sys.exit(1)
             
-            # Check for mcp.json
-            if os.path.exists("mcp.json"):
-                try:
-                    with open("mcp.json", 'r') as f:
-                        config = json.load(f)
-                    server_count = len(config.get("mcpServers", {}))
-                    click.echo(f"Found {server_count} MCP servers configured in mcp.json")
-                except Exception as e:
-                    click.echo(f"⚠️  Warning: Could not read mcp.json: {e}")
-            else:
-                click.echo("ℹ️  No mcp.json found - running without MCP servers")
-            
-            # Show timeout settings
-            conn_timeout = os.getenv("NAGATHA_MCP_CONNECTION_TIMEOUT", "5")
-            disc_timeout = os.getenv("NAGATHA_MCP_DISCOVERY_TIMEOUT", "3")
-            click.echo(f"Connection timeout: {conn_timeout}s, Discovery timeout: {disc_timeout}s")
-            
-            # Initialize MCP and database
-            click.echo("Connecting to MCP servers...")
-            init_summary = await startup()
-            
-            # Show initialization results
-            if init_summary['connected'] > 0:
-                click.echo(f"✅ Connected to {init_summary['connected']}/{init_summary['total_configured']} MCP servers")
-                click.echo(f"🔧 {init_summary['total_tools']} tools available")
-                if init_summary['connected_servers']:
-                    click.echo(f"Connected: {', '.join(init_summary['connected_servers'])}")
-                logger.info(f"Dashboard startup successful: {init_summary['connected']} servers, {init_summary['total_tools']} tools")
-            else:
-                click.echo(f"⚠️  No MCP servers connected")
-                if init_summary['total_configured'] > 0:
-                    click.echo(f"   ({init_summary['total_configured']} configured but failed)")
-                logger.warning("Dashboard startup completed but no MCP servers connected")
-            
-            if init_summary['failed_servers']:
-                click.echo("❌ Failed connections:")
-                for server_name, error in init_summary['failed_servers']:
-                    click.echo(f"   • {server_name}: {error}")
-            
-            click.echo("\nStarting Nagatha Dashboard...")
-            click.echo("Use Ctrl+Q to quit, F1 for help, Ctrl+1 to focus command input")
-            
-            # Run the dashboard
-            await run_dashboard()
-        except KeyboardInterrupt:
-            click.echo("\nShutting down Nagatha Dashboard...")
-        except Exception as e:
-            click.echo(f"Error during dashboard startup: {e}", err=True)
-            logger.exception("Error during dashboard startup")
-        finally:
-            # Clean up MCP connections
             try:
-                await shutdown()
-                click.echo("Dashboard shutdown complete.")
+                with open(status_file, 'r') as f:
+                    status_data = json.load(f)
+                if not status_data.get('running', False):
+                    click.echo("❌ Nagatha server is not running!")
+                    click.echo("💡 Start the server with: nagatha server start")
+                    sys.exit(1)
             except Exception as e:
-                click.echo(f"Error during dashboard shutdown: {e}", err=True)
-                logger.exception("Error during dashboard shutdown")
+                click.echo(f"❌ Error reading server status: {e}")
+                click.echo("💡 Start the server with: nagatha server start")
+                sys.exit(1)
+            
+            # Server is running - connect to it
+            click.echo("✅ Connecting to Nagatha server...")
+            click.echo(f"📍 Server: {status_data['host']}:{status_data['port']}")
+            
+            # Create HTTP client for server communication
+            import aiohttp
+            import json
+            
+            # REST API runs on main server port + 1
+            rest_port = status_data['port'] + 1
+            server_url = f"http://{status_data['host']}:{rest_port}"
+            
+            try:
+                async with aiohttp.ClientSession() as session:
+                    # Test server connection
+                    async with session.get(f"{server_url}/health") as response:
+                        if response.status == 200:
+                            click.echo("✅ Connected to server successfully")
+                        else:
+                            click.echo(f"❌ Server responded with status {response.status}")
+                            click.echo("💡 The server may not be fully initialized yet")
+                            sys.exit(1)
+            except aiohttp.ClientError as e:
+                click.echo(f"❌ Could not connect to server: {e}")
+                click.echo("💡 Make sure the server is running and accessible")
+                sys.exit(1)
+            
+            # Server-connected chat
+            try:
+                async with aiohttp.ClientSession() as session:
+                    # Create or get session
+                    if new or not session_id:
+                        async with session.post(f"{server_url}/sessions", json={}) as response:
+                            if response.status == 200:
+                                session_data = await response.json()
+                                current_session = session_data.get('session_id')
+                                click.echo(f"Created new session: {current_session}")
+                            else:
+                                click.echo(f"❌ Failed to create session: {response.status}")
+                                sys.exit(1)
+                    else:
+                        current_session = session_id
+                        click.echo(f"Using session: {current_session}")
+                    
+                    # Send single message if provided
+                    if message:
+                        click.echo(f"You: {message}")
+                        async with session.post(
+                            f"{server_url}/sessions/{current_session}/messages",
+                            json={"message": message}
+                        ) as response:
+                            if response.status == 200:
+                                response_data = await response.json()
+                                click.echo(f"Nagatha: {response_data.get('response', 'No response')}")
+                            else:
+                                click.echo(f"❌ Failed to send message: {response.status}")
+                                sys.exit(1)
+                        return
+                    
+                    # Interactive mode
+                    if interactive:
+                        click.echo("Interactive chat mode. Type 'quit' to exit.")
+                        click.echo("Type your message and press Enter:")
+                        
+                        while True:
+                            try:
+                                user_input = input("> ").strip()
+                                if user_input.lower() in ['quit', 'exit', 'q']:
+                                    break
+                                
+                                if not user_input:
+                                    continue
+                                
+                                click.echo(f"You: {user_input}")
+                                async with session.post(
+                                    f"{server_url}/sessions/{current_session}/messages",
+                                    json={"message": user_input}
+                                ) as response:
+                                    if response.status == 200:
+                                        response_data = await response.json()
+                                        click.echo(f"Nagatha: {response_data.get('response', 'No response')}")
+                                    else:
+                                        click.echo(f"❌ Failed to send message: {response.status}")
+                                click.echo()
+                                
+                            except KeyboardInterrupt:
+                                break
+                            except EOFError:
+                                break
+                        
+                        click.echo("Chat session ended.")
+            
+            except Exception as e:
+                click.echo(f"❌ Server communication error: {e}")
+                sys.exit(1)
+            
+        except Exception as e:
+            click.echo(f"❌ Error: {e}", err=True)
+            logger.exception("Chat error")
+            sys.exit(1)
     
-    asyncio.run(_run_dashboard_with_lifecycle())
+    asyncio.run(_chat())
+
+
+@cli.group()
+def server():
+    """
+    Unified server management commands.
+    """
+    pass
+
+
+@server.command("start")
+@click.option("--host", default="localhost", help="Host to bind to")
+@click.option("--port", default=8080, type=int, help="Port to bind to")
+@click.option("--max-connections", default=3, type=int, help="Maximum connections per MCP server")
+@click.option("--session-timeout", default=24, type=int, help="Session timeout in hours")
+@click.option("--cleanup-interval", default=30, type=int, help="Cleanup interval in minutes")
+@click.option("--no-websocket", is_flag=True, help="Disable WebSocket API")
+@click.option("--no-rest", is_flag=True, help="Disable REST API")
+@click.option("--no-events", is_flag=True, help="Disable Events API")
+@click.option("--daemon", is_flag=True, help="Run server as daemon")
+@click.option("--auto-discord", is_flag=True, help="Automatically start Discord bot when server starts")
+def server_start(host, port, max_connections, session_timeout, cleanup_interval, 
+                no_websocket, no_rest, no_events, daemon, auto_discord):
+    """
+    Start the unified Nagatha server.
+    """
+    async def _start_server():
+        from nagatha_assistant.server.core_server import ServerConfig, start_unified_server
+        import os
+        
+        # Check for environment variable override
+        env_auto_discord = os.getenv("NAGATHA_AUTO_DISCORD", "").lower() in ("true", "1", "yes", "on")
+        final_auto_discord = auto_discord or env_auto_discord
+        
+        config = ServerConfig(
+            host=host,
+            port=port,
+            max_connections_per_server=max_connections,
+            session_timeout_hours=session_timeout,
+            cleanup_interval_minutes=cleanup_interval,
+            enable_websocket=not no_websocket,
+            enable_rest=not no_rest,
+            enable_events=not no_events
+        )
+        
+        click.echo(f"Starting Nagatha Unified Server on {host}:{port}")
+        click.echo(f"Configuration: max_connections={max_connections}, session_timeout={session_timeout}h")
+        
+        if final_auto_discord:
+            click.echo("Discord bot will be started automatically")
+        
+        try:
+            # Start the server directly
+            await start_unified_server(config)
+            
+            # If auto-discord is enabled, start Discord bot after server is running
+            if final_auto_discord:
+                click.echo("Starting Discord bot...")
+                # TODO: Implement Discord auto-start
+                # This will be implemented to automatically start Discord when server starts
+                click.echo("Discord auto-start will be implemented in next phase")
+                
+        except KeyboardInterrupt:
+            click.echo("\nServer stopped by user")
+        except Exception as e:
+            click.echo(f"Error starting server: {e}", err=True)
+            sys.exit(1)
+    
+    asyncio.run(_start_server())
+
+
+@server.command("status")
+def server_status():
+    """
+    Show unified server status.
+    """
+    async def _show_status():
+        try:
+            import json
+            import os
+            from datetime import datetime
+            
+            status_file = "/tmp/nagatha_server_status.json"
+            
+            if os.path.exists(status_file):
+                with open(status_file, 'r') as f:
+                    status_data = json.load(f)
+                
+                click.echo("=== Nagatha Unified Server Status ===")
+                click.echo(f"Running: {status_data['running']}")
+                click.echo(f"Host: {status_data['host']}")
+                click.echo(f"Port: {status_data['port']}")
+                
+                # Calculate uptime
+                start_time = datetime.fromisoformat(status_data['start_time'])
+                uptime = (datetime.now() - start_time).total_seconds()
+                click.echo(f"Uptime: {uptime:.1f} seconds")
+                
+            else:
+                click.echo("Server is not running")
+                
+        except Exception as e:
+            click.echo(f"Error getting server status: {e}", err=True)
+    
+    asyncio.run(_show_status())
+
+
+@server.command("sessions")
+@click.option("--session-id", help="Show details for specific session")
+@click.option("--format", "output_format", type=click.Choice(["table", "json", "detailed"]), 
+              default="table", help="Output format")
+def server_sessions(session_id, output_format):
+    """
+    List active sessions or show details for a specific session.
+    
+    This command shows all active sessions on the unified server, including:
+    - Session ID and User ID
+    - Interface used (CLI, Discord, API, etc.)
+    - Session status and creation time
+    - Interface-specific context information
+    
+    Examples:
+        nagatha server sessions                    # List all sessions (table format)
+        nagatha server sessions --format detailed # List with full details
+        nagatha server sessions --session-id 123  # Show specific session details
+        nagatha server sessions --format json     # Output as JSON
+    
+    Related commands:
+        nagatha server session-end <id>     # End a specific session
+        nagatha server session-clear        # Clear all sessions
+    """
+    async def _list_sessions():
+        try:
+            import json
+            import os
+            import aiohttp
+            from datetime import datetime
+            
+            status_file = "/tmp/nagatha_server_status.json"
+            
+            if not os.path.exists(status_file):
+                click.echo("Server is not running", err=True)
+                return
+            
+            with open(status_file, 'r') as f:
+                status_data = json.load(f)
+            
+            if not status_data.get('running', False):
+                click.echo("Server is not running", err=True)
+                return
+            
+            # REST API runs on main server port + 1
+            rest_port = status_data['port'] + 1
+            server_url = f"http://{status_data['host']}:{rest_port}"
+            
+            try:
+                async with aiohttp.ClientSession() as client_session:
+                    if session_id:
+                        # Get specific session details
+                        async with client_session.get(f"{server_url}/sessions/{session_id}") as response:
+                            if response.status == 200:
+                                session_info = await response.json()
+                                _display_session_details(session_info, output_format)
+                            elif response.status == 404:
+                                click.echo(f"❌ Session '{session_id}' not found", err=True)
+                            else:
+                                click.echo(f"❌ Error getting session details: HTTP {response.status}", err=True)
+                    else:
+                        # List all sessions
+                        async with client_session.get(f"{server_url}/sessions") as response:
+                            if response.status == 200:
+                                sessions_data = await response.json()
+                                sessions = sessions_data.get('sessions', [])
+                                _display_sessions_list(sessions, output_format, status_data)
+                            else:
+                                click.echo(f"❌ Error listing sessions: HTTP {response.status}", err=True)
+                                
+            except aiohttp.ClientError as e:
+                click.echo(f"❌ Could not connect to server: {e}", err=True)
+                
+        except Exception as e:
+            click.echo(f"Error listing sessions: {e}", err=True)
+    
+    def _display_sessions_list(sessions, output_format, status_data):
+        """Display the list of sessions."""
+        if output_format == "json":
+            click.echo(json.dumps(sessions, indent=2, default=str))
+            return
+        
+        click.echo("=== Nagatha Session Management ===")
+        click.echo(f"Server: {status_data['host']}:{status_data['port']}")
+        click.echo(f"Active Sessions: {len(sessions)}")
+        click.echo()
+        
+        if not sessions:
+            click.echo("No active sessions found.")
+            return
+        
+        if output_format == "detailed":
+            for i, session in enumerate(sessions, 1):
+                click.echo(f"{i}. Session ID: {session.get('session_id', 'N/A')}")
+                click.echo(f"   User ID: {session.get('user_id', 'N/A')}")
+                click.echo(f"   Interface: {session.get('interface', 'N/A')}")
+                click.echo(f"   Status: {session.get('status', 'unknown')}")
+                created_at = session.get('created_at', 'N/A')
+                if created_at != 'N/A':
+                    try:
+                        dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                        created_str = dt.strftime('%Y-%m-%d %H:%M:%S')
+                    except:
+                        created_str = created_at
+                else:
+                    created_str = 'N/A'
+                click.echo(f"   Created: {created_str}")
+                
+                # Show interface context if available
+                interface_context = session.get('interface_context', {})
+                if interface_context:
+                    click.echo(f"   Context: {interface_context}")
+                click.echo()
+        else:
+            # Table format
+            click.echo(f"{'Session ID':<12} {'User ID':<15} {'Interface':<10} {'Status':<8} {'Created':<20}")
+            click.echo("-" * 75)
+            
+            for session in sessions:
+                session_id = str(session.get('session_id', 'N/A'))[:11]
+                user_id = session.get('user_id', 'N/A')[:14]
+                interface = session.get('interface', 'N/A')[:9]
+                status = session.get('status', 'unknown')[:7]
+                
+                created_at = session.get('created_at', 'N/A')
+                if created_at != 'N/A':
+                    try:
+                        dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                        created_str = dt.strftime('%Y-%m-%d %H:%M:%S')
+                    except:
+                        created_str = created_at[:19]
+                else:
+                    created_str = 'N/A'
+                
+                click.echo(f"{session_id:<12} {user_id:<15} {interface:<10} {status:<8} {created_str:<20}")
+    
+    def _display_session_details(session_info, output_format):
+        """Display detailed information for a specific session."""
+        if output_format == "json":
+            click.echo(json.dumps(session_info, indent=2, default=str))
+            return
+        
+        click.echo("=== Session Details ===")
+        click.echo(f"Session ID: {session_info.get('session_id', 'N/A')}")
+        click.echo(f"User ID: {session_info.get('user_id', 'N/A')}")
+        click.echo(f"Interface: {session_info.get('interface', 'N/A')}")
+        click.echo(f"Status: {session_info.get('status', 'unknown')}")
+        
+        created_at = session_info.get('created_at', 'N/A')
+        if created_at != 'N/A':
+            try:
+                dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                created_str = dt.strftime('%Y-%m-%d %H:%M:%S')
+                uptime = (datetime.now() - dt).total_seconds()
+                if uptime < 60:
+                    uptime_str = f"{uptime:.1f} seconds"
+                elif uptime < 3600:
+                    uptime_str = f"{uptime/60:.1f} minutes"
+                else:
+                    uptime_str = f"{uptime/3600:.1f} hours"
+                click.echo(f"Created: {created_str}")
+                click.echo(f"Uptime: {uptime_str}")
+            except:
+                click.echo(f"Created: {created_at}")
+        else:
+            click.echo("Created: N/A")
+        
+        # Show interface context if available
+        interface_context = session_info.get('interface_context', {})
+        if interface_context:
+            click.echo()
+            click.echo("Interface Context:")
+            for key, value in interface_context.items():
+                click.echo(f"  {key}: {value}")
+    
+    asyncio.run(_list_sessions())
+
+
+@server.command("session-end")
+@click.argument("session_id")
+@click.option("--force", is_flag=True, help="Force end session without confirmation")
+def server_session_end(session_id, force):
+    """
+    End a specific session.
+    """
+    async def _end_session():
+        try:
+            import json
+            import os
+            import aiohttp
+            
+            status_file = "/tmp/nagatha_server_status.json"
+            
+            if not os.path.exists(status_file):
+                click.echo("Server is not running", err=True)
+                return
+            
+            with open(status_file, 'r') as f:
+                status_data = json.load(f)
+            
+            if not status_data.get('running', False):
+                click.echo("Server is not running", err=True)
+                return
+            
+            if not force:
+                click.echo(f"Are you sure you want to end session '{session_id}'? This action cannot be undone.")
+                confirmation = input("Type 'yes' to confirm: ").strip().lower()
+                if confirmation != 'yes':
+                    click.echo("Session end cancelled.")
+                    return
+            
+            # REST API runs on main server port + 1
+            rest_port = status_data['port'] + 1
+            server_url = f"http://{status_data['host']}:{rest_port}"
+            
+            try:
+                async with aiohttp.ClientSession() as client_session:
+                    # First check if session exists
+                    async with client_session.get(f"{server_url}/sessions/{session_id}") as response:
+                        if response.status == 404:
+                            click.echo(f"❌ Session '{session_id}' not found", err=True)
+                            return
+                        elif response.status != 200:
+                            click.echo(f"❌ Error checking session: HTTP {response.status}", err=True)
+                            return
+                    
+                    # TODO: Implement session deletion endpoint in REST API
+                    # For now, we'll just show that the session exists but can't be deleted
+                    click.echo(f"⚠️  Session '{session_id}' exists but session deletion is not yet implemented in the server API.")
+                    click.echo("💡 Sessions will automatically timeout after the configured period.")
+                    click.echo("💡 To force cleanup, restart the server with 'nagatha server stop' and 'nagatha server start'")
+                    
+            except aiohttp.ClientError as e:
+                click.echo(f"❌ Could not connect to server: {e}", err=True)
+                
+        except Exception as e:
+            click.echo(f"Error ending session: {e}", err=True)
+    
+    asyncio.run(_end_session())
+
+
+@server.command("session-clear")
+@click.option("--confirm", is_flag=True, help="Confirm clearing all sessions")
+def server_session_clear(confirm):
+    """
+    Clear all active sessions.
+    
+    WARNING: This will end ALL active sessions.
+    """
+    async def _clear_sessions():
+        try:
+            import json
+            import os
+            import aiohttp
+            
+            if not confirm:
+                click.echo("❌ Use --confirm to clear all sessions")
+                click.echo("This action will end ALL active sessions and cannot be undone.")
+                return
+            
+            status_file = "/tmp/nagatha_server_status.json"
+            
+            if not os.path.exists(status_file):
+                click.echo("Server is not running", err=True)
+                return
+            
+            with open(status_file, 'r') as f:
+                status_data = json.load(f)
+            
+            if not status_data.get('running', False):
+                click.echo("Server is not running", err=True)
+                return
+            
+            # REST API runs on main server port + 1
+            rest_port = status_data['port'] + 1
+            server_url = f"http://{status_data['host']}:{rest_port}"
+            
+            try:
+                async with aiohttp.ClientSession() as client_session:
+                    # Get current session count first
+                    async with client_session.get(f"{server_url}/sessions") as response:
+                        if response.status == 200:
+                            sessions_data = await response.json()
+                            session_count = len(sessions_data.get('sessions', []))
+                            
+                            if session_count == 0:
+                                click.echo("No active sessions to clear.")
+                                return
+                            
+                            # TODO: Implement bulk session deletion endpoint in REST API
+                            # For now, we'll just show the count and suggest restart
+                            click.echo(f"⚠️  Found {session_count} active sessions but bulk session deletion is not yet implemented in the server API.")
+                            click.echo("💡 Sessions will automatically timeout after the configured period.")
+                            click.echo("💡 To force cleanup, restart the server with 'nagatha server stop' and 'nagatha server start'")
+                        else:
+                            click.echo(f"❌ Error getting session list: HTTP {response.status}", err=True)
+                    
+            except aiohttp.ClientError as e:
+                click.echo(f"❌ Could not connect to server: {e}", err=True)
+                
+        except Exception as e:
+            click.echo(f"Error clearing sessions: {e}", err=True)
+    
+    asyncio.run(_clear_sessions())
+
+
+@server.command("stop")
+def server_stop():
+    """
+    Stop the unified server.
+    """
+    async def _stop_server():
+        try:
+            import json
+            import os
+            import subprocess
+            
+            status_file = "/tmp/nagatha_server_status.json"
+            
+            if not os.path.exists(status_file):
+                click.echo("Server is not running")
+                return
+            
+            click.echo("Stopping Nagatha Unified Server...")
+            
+            # Kill any nagatha server processes
+            try:
+                subprocess.run(["pkill", "-f", "nagatha server start"], check=False)
+                click.echo("Server processes stopped")
+            except Exception as e:
+                click.echo(f"Warning: Could not stop server processes: {e}")
+            
+            # Remove status file
+            if os.path.exists(status_file):
+                os.remove(status_file)
+            
+            click.echo("Server stopped")
+            
+        except Exception as e:
+            click.echo(f"Error stopping server: {e}", err=True)
+    
+    asyncio.run(_stop_server())
+
+
+@cli.group()
+def connect():
+    """
+    Connect interfaces to the unified server.
+    """
+    pass
+
+
+@connect.command("cli")
+@click.option("--user-id", default="cli_user", help="User ID for this CLI session")
+def connect_cli(user_id):
+    """
+    Connect CLI interface to the unified server.
+    """
+    async def _connect_cli():
+        try:
+            import json
+            import os
+            
+            status_file = "/tmp/nagatha_server_status.json"
+            
+            if not os.path.exists(status_file):
+                click.echo("Server is not running. Start it with 'nagatha server start'", err=True)
+                return
+            
+            with open(status_file, 'r') as f:
+                status_data = json.load(f)
+            
+            if not status_data.get('running', False):
+                click.echo("Server is not running. Start it with 'nagatha server start'", err=True)
+                return
+            
+            click.echo(f"Connecting CLI to unified server as user: {user_id}")
+            click.echo("Server is running on {}:{}".format(status_data['host'], status_data['port']))
+            click.echo("Note: Full message processing not yet implemented")
+            click.echo("Type 'quit' to exit")
+            
+            while True:
+                try:
+                    message = input("> ")
+                    if message.lower() in ['quit', 'exit', 'q']:
+                        break
+                    
+                    # For now, just echo the message back
+                    click.echo(f"Nagatha: Received message: {message}")
+                    click.echo("(Message processing will be implemented in next phase)")
+                    
+                except KeyboardInterrupt:
+                    break
+                except Exception as e:
+                    click.echo(f"Error: {e}", err=True)
+            
+            click.echo("Disconnected from server")
+            
+        except Exception as e:
+            click.echo(f"Error connecting to server: {e}", err=True)
+    
+    asyncio.run(_connect_cli())
+
+
+@connect.command("discord")
+@click.option("--daemon", is_flag=True, help="Run Discord bot as daemon")
+def connect_discord(daemon):
+    """
+    Start Discord bot connected to the unified server.
+    """
+    async def _connect_discord():
+        try:
+            import json
+            import os
+            
+            status_file = "/tmp/nagatha_server_status.json"
+            
+            if not os.path.exists(status_file):
+                click.echo("Server is not running. Start it with 'nagatha server start'", err=True)
+                return
+            
+            with open(status_file, 'r') as f:
+                status_data = json.load(f)
+            
+            if not status_data.get('running', False):
+                click.echo("Server is not running. Start it with 'nagatha server start'", err=True)
+                return
+            
+            click.echo("Starting Discord bot connected to unified server...")
+            click.echo("Server is running on {}:{}".format(status_data['host'], status_data['port']))
+            
+            # Check for Discord token
+            discord_token = os.getenv('DISCORD_BOT_TOKEN')
+            if not discord_token:
+                click.echo("❌ DISCORD_BOT_TOKEN environment variable not set")
+                click.echo("💡 Set your Discord bot token: export DISCORD_BOT_TOKEN='your_token_here'")
+                return
+            
+            # Start unified Discord bot
+            from nagatha_assistant.server.discord_bot import UnifiedDiscordBotManager
+            
+            bot_manager = UnifiedDiscordBotManager(status_data)
+            result = await bot_manager.start_bot(discord_token)
+            
+            if "successfully" in result:
+                click.echo("✅ Discord bot started successfully")
+                click.echo("🤖 Bot is now connected to the unified server")
+                click.echo("💡 Use /chat, /status, /help, and /auto-chat commands in Discord")
+                
+                # Keep the bot running
+                try:
+                    while True:
+                        await asyncio.sleep(1)
+                except KeyboardInterrupt:
+                    click.echo("\nStopping Discord bot...")
+                    await bot_manager.stop_bot()
+                    click.echo("Discord bot stopped")
+            else:
+                click.echo(f"❌ Failed to start Discord bot: {result}")
+            
+        except Exception as e:
+            click.echo(f"Error connecting Discord bot: {e}", err=True)
+    
+    asyncio.run(_connect_discord())
 
 
 @cli.group()

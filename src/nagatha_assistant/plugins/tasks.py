@@ -275,7 +275,7 @@ def cleanup_logs(self, days_to_keep: int = 7):
 
 
 @celery_app.task(bind=True, name='nagatha.memory.backup')
-def backup_memory(self, section: Optional[str] = None):
+async def backup_memory(self, section: Optional[str] = None):
     """Backup memory data to file."""
     task_id = self.request.id
     
@@ -449,7 +449,7 @@ def send_notification(self, message: str, notification_type: str = "info",
 
 
 @celery_app.task(bind=True, name='nagatha.memory.cleanup')
-def cleanup_memory(self, section: Optional[str] = None, days_old: int = 30):
+async def cleanup_memory(self, section: Optional[str] = None, days_old: int = 30):
     """Clean up old memory entries."""
     task_id = self.request.id
     

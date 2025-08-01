@@ -136,29 +136,36 @@ src/nagatha_assistant/
 
 ## 💬 Usage
 
-### Enhanced Dashboard UI (Recommended)
+### Unified Dashboard UI (Recommended)
 
-The Dashboard UI provides a comprehensive multi-panel interface with real-time monitoring:
+The Unified Dashboard UI provides a comprehensive page-based interface with integrated chat and management features:
 
 ```bash
 nagatha dashboard
 ```
 
 **Dashboard Features:**
-- **Multi-Panel Layout**: Status, command interface, notifications, and resource monitoring
+- **Server-Connected Mode**: Connects to running Nagatha server for full functionality
+- **Page-Based Navigation**: Keyboard shortcuts for Dashboard, Chat, Notes, Tasks, and System pages
+- **Integrated Chat**: Full conversation interface as a dedicated page
+- **Tabbed Sub-Pages**: Top tabs for organizing content within pages (Notes, Tasks, System)
 - **Real-Time Updates**: Live system status, MCP server monitoring, resource usage
-- **Enhanced Commands**: Command history, auto-suggestions, system commands
-- **Resource Monitoring**: CPU, memory, disk usage, token costs, database statistics
+- **Dark Theme**: Clean dark interface for optimal viewing
 - **Keyboard Navigation**: Comprehensive shortcuts for all functions
 
-**Dashboard Commands:**
-- `/help` - Show all available commands and shortcuts
-- `/status` - Display detailed system status
-- `/sessions` - Open session selector
-- `/tools` - Show available MCP tools
-- `/refresh` - Refresh all dashboard data
-- `/clear` - Clear conversation area
-- `/toggle <section>` - Toggle panel visibility
+**Server Integration:**
+- **Server Required**: Dashboard requires the Nagatha server to be running
+- **Full Functionality**: When connected to server, dashboard shows real-time status and data
+- **Server Status**: Shows connection status and server information
+
+**Dashboard Navigation:**
+- **Left Sidebar**: Click to navigate between pages
+- **Ctrl+1**: Dashboard page (system overview)
+- **Ctrl+2**: Chat page (conversation interface)
+- **Ctrl+3**: Notes page (note management)
+- **Ctrl+4**: Tasks page (task management)
+- **Ctrl+5**: System page (configuration)
+- **F1**: Show help and keyboard shortcuts
 
 ### Interactive Chat (Textual UI)
 
@@ -167,6 +174,8 @@ The Textual UI provides a rich terminal interface for conversing with Nagatha:
 ```bash
 nagatha run
 ```
+
+**Note:** This command is deprecated. Use `nagatha chat --interactive` instead.
 
 **UI Commands:**
 - `/help` - Show all available commands
@@ -186,7 +195,12 @@ Nagatha provides comprehensive CLI commands for all functionality:
 
 #### Chat Commands
 ```bash
-# Session management
+# Simple chat commands
+nagatha chat --new --message "Hello, how are you?"    # Send single message
+nagatha chat --interactive                            # Start interactive chat
+nagatha chat --session-id 5 --message "What's the weather?"  # Use specific session
+
+# Legacy session management (deprecated)
 nagatha chat new                     # Create new conversation session
 nagatha chat list                    # List all sessions
 nagatha chat history <session_id>    # Show session history
@@ -270,6 +284,27 @@ nagatha usage                        # Show token usage and costs
 nagatha mcp status                   # Show server status and available tools
 nagatha mcp reload                   # Reconnect to all MCP servers
 ```
+
+#### Server Management
+```bash
+# Start the unified server
+nagatha server start
+
+# Start server with Discord bot auto-start
+nagatha server start --auto-discord
+
+# Check server status
+nagatha server status
+
+# List active sessions
+nagatha server sessions
+
+# Stop the server
+nagatha server stop
+```
+
+**Environment Variables:**
+- `NAGATHA_AUTO_DISCORD=true` - Automatically start Discord bot when server starts
 
 #### Memory System
 ```bash
