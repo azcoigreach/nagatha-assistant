@@ -1036,7 +1036,8 @@ def server_start(host, port, max_connections, session_timeout, cleanup_interval,
             cleanup_interval_minutes=cleanup_interval,
             enable_websocket=not no_websocket,
             enable_rest=not no_rest,
-            enable_events=not no_events
+            enable_events=not no_events,
+            auto_discord=final_auto_discord
         )
         
         click.echo("🚀 Starting Nagatha Unified Server...")
@@ -1054,13 +1055,6 @@ def server_start(host, port, max_connections, session_timeout, cleanup_interval,
             click.echo("🔄 Initializing server components...")
             await start_unified_server(config)
             
-            # If auto-discord is enabled, start Discord bot after server is running
-            if final_auto_discord:
-                click.echo("🤖 Starting Discord bot...")
-                # TODO: Implement Discord auto-start
-                # This will be implemented to automatically start Discord when server starts
-                click.echo("Discord auto-start will be implemented in next phase")
-                
         except KeyboardInterrupt:
             click.echo("\n🛑 Server stopped by user")
         except Exception as e:

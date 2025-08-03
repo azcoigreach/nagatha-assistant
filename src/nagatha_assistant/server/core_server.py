@@ -33,6 +33,7 @@ class ServerConfig:
     enable_websocket: bool = True
     enable_rest: bool = True
     enable_events: bool = True
+    auto_discord: bool = False
 
 
 class NagathaUnifiedServer:
@@ -114,6 +115,7 @@ class NagathaUnifiedServer:
             
             # Write status to file for CLI status command
             import json
+            import os
             status_file = "/tmp/nagatha_server_status.json"
             status_data = {
                 "running": True,
@@ -130,6 +132,26 @@ class NagathaUnifiedServer:
             if self.rest_api:
                 self.logger.info(f"REST API running on {self.config.host}:{self.config.port + 1}")
             self.logger.info(f"Agent system: {'initialized' if self._agent_initialized else 'failed to initialize'}")
+            
+            # Handle auto-discord if enabled
+            if self.config.auto_discord:
+                self.logger.info("Auto-discord enabled, starting Discord bot...")
+                try:
+                    if not os.getenv('DISCORD_BOT_TOKEN'):
+                        self.logger.warning("Discord bot token not configured - skipping Discord bot start")
+                    else:
+                        from nagatha_assistant.core.plugin_manager import get_plugin_manager
+                        plugin_manager = get_plugin_manager()
+                        discord_plugin = plugin_manager.get_plugin("discord_bot")
+                        
+                        if discord_plugin:
+                            result = await discord_plugin.start_discord_bot()
+                            self.logger.info(f"Discord bot started: {result}")
+                        else:
+                            self.logger.error("Discord bot plugin not found or not enabled")
+                            
+                except Exception as e:
+                    self.logger.error(f"Error starting Discord bot: {e}")
             
             # Keep the server running
             self.logger.info("Server is now running and ready to accept connections")
