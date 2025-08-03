@@ -1011,12 +1011,14 @@ def server():
 @click.option("--no-websocket", is_flag=True, help="Disable WebSocket API")
 @click.option("--no-rest", is_flag=True, help="Disable REST API")
 @click.option("--no-events", is_flag=True, help="Disable Events API")
-@click.option("--daemon", is_flag=True, help="Run server as daemon")
 @click.option("--auto-discord", is_flag=True, help="Automatically start Discord bot when server starts")
 def server_start(host, port, max_connections, session_timeout, cleanup_interval, 
-                no_websocket, no_rest, no_events, daemon, auto_discord):
+                no_websocket, no_rest, no_events, auto_discord):
     """
     Start the unified Nagatha server.
+    
+    The server will run continuously until stopped with Ctrl+C.
+    To run in background, use: nohup nagatha server start &
     """
     async def _start_server():
         from nagatha_assistant.server.core_server import ServerConfig, start_unified_server
@@ -1037,27 +1039,32 @@ def server_start(host, port, max_connections, session_timeout, cleanup_interval,
             enable_events=not no_events
         )
         
-        click.echo(f"Starting Nagatha Unified Server on {host}:{port}")
-        click.echo(f"Configuration: max_connections={max_connections}, session_timeout={session_timeout}h")
+        click.echo("🚀 Starting Nagatha Unified Server...")
+        click.echo(f"📍 Host: {host}:{port}")
+        click.echo(f"⚙️  Configuration: max_connections={max_connections}, session_timeout={session_timeout}h")
+        click.echo("💡 Server will run continuously - this is normal!")
+        click.echo("💡 Press Ctrl+C to stop the server")
+        click.echo("💡 To run in background: nohup nagatha server start &")
         
         if final_auto_discord:
-            click.echo("Discord bot will be started automatically")
+            click.echo("🤖 Discord bot will be started automatically")
         
         try:
             # Start the server directly
+            click.echo("🔄 Initializing server components...")
             await start_unified_server(config)
             
             # If auto-discord is enabled, start Discord bot after server is running
             if final_auto_discord:
-                click.echo("Starting Discord bot...")
+                click.echo("🤖 Starting Discord bot...")
                 # TODO: Implement Discord auto-start
                 # This will be implemented to automatically start Discord when server starts
                 click.echo("Discord auto-start will be implemented in next phase")
                 
         except KeyboardInterrupt:
-            click.echo("\nServer stopped by user")
+            click.echo("\n🛑 Server stopped by user")
         except Exception as e:
-            click.echo(f"Error starting server: {e}", err=True)
+            click.echo(f"❌ Error starting server: {e}", err=True)
             sys.exit(1)
     
     asyncio.run(_start_server())
@@ -1072,6 +1079,7 @@ def server_status():
         try:
             import json
             import os
+            import psutil
             from datetime import datetime
             
             status_file = "/tmp/nagatha_server_status.json"
@@ -1080,18 +1088,35 @@ def server_status():
                 with open(status_file, 'r') as f:
                     status_data = json.load(f)
                 
+                # Check if the process is actually running
+                pid = status_data.get('pid')
+                process_running = False
+                if pid:
+                    try:
+                        process = psutil.Process(pid)
+                        process_running = process.is_running() and 'nagatha' in ' '.join(process.cmdline()).lower()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        process_running = False
+                
                 click.echo("=== Nagatha Unified Server Status ===")
-                click.echo(f"Running: {status_data['running']}")
+                click.echo(f"Status: {'🟢 Running' if process_running else '🔴 Stopped (stale status file)'}")
                 click.echo(f"Host: {status_data['host']}")
                 click.echo(f"Port: {status_data['port']}")
+                if pid:
+                    click.echo(f"PID: {pid}")
                 
                 # Calculate uptime
                 start_time = datetime.fromisoformat(status_data['start_time'])
                 uptime = (datetime.now() - start_time).total_seconds()
                 click.echo(f"Uptime: {uptime:.1f} seconds")
                 
+                if not process_running:
+                    click.echo("\n⚠️  Warning: Server process is not running but status file exists.")
+                    click.echo("   This may indicate the server crashed or was killed unexpectedly.")
+                    click.echo("   Consider running 'nagatha server stop' to clean up.")
+                
             else:
-                click.echo("Server is not running")
+                click.echo("🔴 Server is not running")
                 
         except Exception as e:
             click.echo(f"Error getting server status: {e}", err=True)
@@ -1415,27 +1440,69 @@ def server_stop():
             import json
             import os
             import subprocess
+            import psutil
             
             status_file = "/tmp/nagatha_server_status.json"
             
             if not os.path.exists(status_file):
-                click.echo("Server is not running")
+                click.echo("🔴 Server is not running")
                 return
             
-            click.echo("Stopping Nagatha Unified Server...")
+            # Read status file
+            with open(status_file, 'r') as f:
+                status_data = json.load(f)
             
-            # Kill any nagatha server processes
+            pid = status_data.get('pid')
+            process_running = False
+            
+            if pid:
+                try:
+                    process = psutil.Process(pid)
+                    process_running = process.is_running() and 'nagatha' in ' '.join(process.cmdline()).lower()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    process_running = False
+            
+            if not process_running:
+                click.echo("⚠️  Server process is not running, but cleaning up status file...")
+                if os.path.exists(status_file):
+                    os.remove(status_file)
+                click.echo("✅ Cleanup complete")
+                return
+            
+            click.echo("🛑 Stopping Nagatha Unified Server...")
+            
+            # Try graceful shutdown first
             try:
-                subprocess.run(["pkill", "-f", "nagatha server start"], check=False)
-                click.echo("Server processes stopped")
-            except Exception as e:
-                click.echo(f"Warning: Could not stop server processes: {e}")
+                if pid:
+                    process = psutil.Process(pid)
+                    process.terminate()
+                    click.echo("📤 Sent termination signal to server process")
+                    
+                    # Wait for graceful shutdown
+                    try:
+                        process.wait(timeout=10)
+                        click.echo("✅ Server stopped gracefully")
+                    except psutil.TimeoutExpired:
+                        click.echo("⚠️  Server didn't stop gracefully, forcing shutdown...")
+                        process.kill()
+                        process.wait(timeout=5)
+                        click.echo("✅ Server stopped forcefully")
+                        
+            except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                click.echo(f"⚠️  Could not stop process directly: {e}")
+                
+                # Fallback to pkill
+                try:
+                    subprocess.run(["pkill", "-f", "nagatha server start"], check=False)
+                    click.echo("✅ Server processes stopped via pkill")
+                except Exception as e:
+                    click.echo(f"⚠️  Warning: Could not stop server processes: {e}")
             
             # Remove status file
             if os.path.exists(status_file):
                 os.remove(status_file)
             
-            click.echo("Server stopped")
+            click.echo("✅ Server stopped")
             
         except Exception as e:
             click.echo(f"Error stopping server: {e}", err=True)

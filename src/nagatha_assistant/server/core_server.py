@@ -11,6 +11,7 @@ import sys
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from datetime import datetime
+import os
 
 from nagatha_assistant.utils.logger import get_logger
 
@@ -118,7 +119,8 @@ class NagathaUnifiedServer:
                 "running": True,
                 "start_time": self._start_time.isoformat(),
                 "port": self.config.port,
-                "host": self.config.host
+                "host": self.config.host,
+                "pid": os.getpid()
             }
             with open(status_file, 'w') as f:
                 json.dump(status_data, f)
@@ -139,7 +141,9 @@ class NagathaUnifiedServer:
             self.logger.error(f"Failed to start server: {e}")
             raise
         finally:
-            await self.stop()
+            # Only stop if we actually started successfully
+            if self._running:
+                await self.stop()
     
     async def stop(self):
         """Stop the unified server."""
