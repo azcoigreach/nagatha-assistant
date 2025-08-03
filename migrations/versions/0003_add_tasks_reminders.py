@@ -32,7 +32,7 @@ def upgrade() -> None:
         sa.Column('id', sa.Integer(), primary_key=True),
         sa.Column('task_id', sa.Integer(), sa.ForeignKey('tasks.id', ondelete='CASCADE'), nullable=False),
         sa.Column('remind_at', sa.DateTime(timezone=True), nullable=False),
-        sa.Column('delivered', sa.Boolean(), nullable=False, server_default=sa.text('0')),
+        sa.Column('delivered', sa.Boolean(), nullable=False, server_default=sa.text('false')),
         sa.Column('recurrence', sa.String(length=20), nullable=True),
         sa.Column('last_sent_at', sa.DateTime(timezone=True), nullable=True),
     )

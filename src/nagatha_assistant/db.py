@@ -14,8 +14,12 @@ root_path = pathlib.Path(__file__).resolve().parents[2]
 default_db = root_path / "nagatha.db"
 # Database URL, defaulting to local SQLite file in project root
 raw_url = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{default_db}")
+
+# Convert URLs to use async drivers
 if raw_url.startswith("sqlite:///") and not raw_url.startswith("sqlite+aiosqlite:///"):
     DATABASE_URL = raw_url.replace("sqlite:///", "sqlite+aiosqlite:///")
+elif raw_url.startswith("postgresql://") and not raw_url.startswith("postgresql+asyncpg://"):
+    DATABASE_URL = raw_url.replace("postgresql://", "postgresql+asyncpg://")
 else:
     DATABASE_URL = raw_url
 

@@ -25,7 +25,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('channel_id', sa.String(length=255), nullable=False),
     sa.Column('guild_id', sa.String(length=255), nullable=True),
-    sa.Column('enabled', sa.Boolean(), server_default='0', nullable=False),
+    sa.Column('enabled', sa.Boolean(), server_default='false', nullable=False),
     sa.Column('enabled_by_user_id', sa.String(length=255), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
