@@ -844,42 +844,6 @@ def discord_setup():
         click.echo("❌ Please configure DISCORD_BOT_TOKEN in your .env file to use the Discord bot")
 
 
-# Command to launch the unified Dashboard UI (main application)
-@cli.command(name="dashboard")
-def dashboard():
-    """
-    Launch the unified Nagatha Assistant Dashboard UI.
-    This is the main application interface that includes chat, monitoring, and management features.
-    
-    Requires the Nagatha server to be running.
-    Start the server with: nagatha server start
-    """
-    click.echo("❌ Dashboard UI has been removed from this version")
-    click.echo("💡 Use the CLI commands to interact with Nagatha:")
-    click.echo("   • nagatha chat --interactive")
-    click.echo("   • nagatha server status")
-    click.echo("   • nagatha memory stats")
-    click.echo("   • nagatha mcp status")
-    click.echo("   • nagatha celery service status")
-
-
-# Legacy command - redirects to dashboard
-@cli.command(name="run")
-def run():
-    """
-    Launch the legacy Textual Chat UI (deprecated).
-    
-    This command is deprecated. Use 'nagatha dashboard' for the unified interface.
-    """
-    click.echo("❌ Legacy Textual UI has been removed from this version")
-    click.echo("💡 Use the CLI commands to interact with Nagatha:")
-    click.echo("   • nagatha chat --interactive")
-    click.echo("   • nagatha server status")
-    click.echo("   • nagatha memory stats")
-    click.echo("   • nagatha mcp status")
-    click.echo("   • nagatha celery service status")
-
-
 @cli.command(name="chat")
 @click.option("--session-id", "-s", type=int, help="Use specific session ID")
 @click.option("--new", "-n", is_flag=True, help="Create new session")
@@ -1480,128 +1444,6 @@ def server_stop():
 
 
 @cli.group()
-def connect():
-    """
-    Connect interfaces to the unified server.
-    """
-    pass
-
-
-@connect.command("cli")
-@click.option("--user-id", default="cli_user", help="User ID for this CLI session")
-def connect_cli(user_id):
-    """
-    Connect CLI interface to the unified server.
-    """
-    async def _connect_cli():
-        try:
-            import json
-            import os
-            
-            status_file = "/tmp/nagatha_server_status.json"
-            
-            if not os.path.exists(status_file):
-                click.echo("Server is not running. Start it with 'nagatha server start'", err=True)
-                return
-            
-            with open(status_file, 'r') as f:
-                status_data = json.load(f)
-            
-            if not status_data.get('running', False):
-                click.echo("Server is not running. Start it with 'nagatha server start'", err=True)
-                return
-            
-            click.echo(f"Connecting CLI to unified server as user: {user_id}")
-            click.echo("Server is running on {}:{}".format(status_data['host'], status_data['port']))
-            click.echo("Note: Full message processing not yet implemented")
-            click.echo("Type 'quit' to exit")
-            
-            while True:
-                try:
-                    message = input("> ")
-                    if message.lower() in ['quit', 'exit', 'q']:
-                        break
-                    
-                    # For now, just echo the message back
-                    click.echo(f"Nagatha: Received message: {message}")
-                    click.echo("(Message processing will be implemented in next phase)")
-                    
-                except KeyboardInterrupt:
-                    break
-                except Exception as e:
-                    click.echo(f"Error: {e}", err=True)
-            
-            click.echo("Disconnected from server")
-            
-        except Exception as e:
-            click.echo(f"Error connecting to server: {e}", err=True)
-    
-    asyncio.run(_connect_cli())
-
-
-@connect.command("discord")
-@click.option("--daemon", is_flag=True, help="Run Discord bot as daemon")
-def connect_discord(daemon):
-    """
-    Start Discord bot connected to the unified server.
-    """
-    async def _connect_discord():
-        try:
-            import json
-            import os
-            
-            status_file = "/tmp/nagatha_server_status.json"
-            
-            if not os.path.exists(status_file):
-                click.echo("Server is not running. Start it with 'nagatha server start'", err=True)
-                return
-            
-            with open(status_file, 'r') as f:
-                status_data = json.load(f)
-            
-            if not status_data.get('running', False):
-                click.echo("Server is not running. Start it with 'nagatha server start'", err=True)
-                return
-            
-            click.echo("Starting Discord bot connected to unified server...")
-            click.echo("Server is running on {}:{}".format(status_data['host'], status_data['port']))
-            
-            # Check for Discord token
-            discord_token = os.getenv('DISCORD_BOT_TOKEN')
-            if not discord_token:
-                click.echo("❌ DISCORD_BOT_TOKEN environment variable not set")
-                click.echo("💡 Set your Discord bot token: export DISCORD_BOT_TOKEN='your_token_here'")
-                return
-            
-            # Start unified Discord bot
-            from nagatha_assistant.server.discord_bot import UnifiedDiscordBotManager
-            
-            bot_manager = UnifiedDiscordBotManager(status_data)
-            result = await bot_manager.start_bot(discord_token)
-            
-            if "successfully" in result:
-                click.echo("✅ Discord bot started successfully")
-                click.echo("🤖 Bot is now connected to the unified server")
-                click.echo("💡 Use /chat, /status, /help, and /auto-chat commands in Discord")
-                
-                # Keep the bot running
-                try:
-                    while True:
-                        await asyncio.sleep(1)
-                except KeyboardInterrupt:
-                    click.echo("\nStopping Discord bot...")
-                    await bot_manager.stop_bot()
-                    click.echo("Discord bot stopped")
-            else:
-                click.echo(f"❌ Failed to start Discord bot: {result}")
-            
-        except Exception as e:
-            click.echo(f"Error connecting Discord bot: {e}", err=True)
-    
-    asyncio.run(_connect_discord())
-
-
-@cli.group()
 def celery():
     """
     Celery task scheduling and worker management commands.
@@ -1845,10 +1687,6 @@ def celery_task_schedule(task_name, schedule, args, kwargs, task_id):
         beat_schedule = get_beat_schedule()
         click.echo(f"✅ Task '{task_name}' scheduled with ID: {scheduled_id}")
         click.echo(f"Schedule: {schedule}")
-        if debug:
-            click.echo(f"Debug: Beat schedule now contains {len(beat_schedule)} tasks")
-            if beat_schedule:
-                click.echo(f"Debug: Task IDs in beat schedule: {list(beat_schedule.keys())}")
         
     except Exception as e:
         click.echo(f"❌ Failed to schedule task: {e}", err=True)
