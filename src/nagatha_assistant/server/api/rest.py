@@ -81,6 +81,8 @@ class RESTAPI:
             interface = data.get('interface', 'unknown')
             interface_context = data.get('interface_context', {})
             
+            print(f"DEBUG: API received message: {message} from user: {user_id}")
+            
             if not message or not user_id:
                 return web.json_response(
                     {"error": "Missing required fields: message, user_id"}, 
@@ -95,6 +97,7 @@ class RESTAPI:
                 interface_context=interface_context
             )
             
+            print(f"DEBUG: API response: {response}")
             return web.json_response({"response": response})
             
         except Exception as e:

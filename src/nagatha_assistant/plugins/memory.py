@@ -6,6 +6,7 @@ during AI conversations, allowing Nagatha to store and retrieve information
 across sessions.
 """
 
+import json
 from typing import Any, Dict, List, Optional, Union
 
 from nagatha_assistant.core.plugin import BasePlugin, PluginCommand, PluginConfig

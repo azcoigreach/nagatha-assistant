@@ -191,10 +191,13 @@ class UnifiedDiscordBot(commands.Bot):
                 }
             }
             
-            # Send message to unified server
-            response = await self._send_message_to_server(
+            # Get or create session for this channel
+            session_key = f"discord_channel:{message.channel.id}"
+            
+            # Send message to unified server using session-based approach
+            response = await self._send_message_to_server_with_session(
                 message=message.content,
-                user_id=user_id,
+                session_key=session_key,
                 interface_context=interface_context
             )
             
@@ -213,6 +216,42 @@ class UnifiedDiscordBot(commands.Bot):
                 await message.channel.send("❌ Sorry, I encountered an error processing your message.")
             except Exception as send_error:
                 logger.error(f"Failed to send error message: {send_error}")
+    
+    async def _send_message_to_server_with_session(self, message: str, session_key: str, interface_context: Dict[str, Any]) -> str:
+        """Send a message to the unified server using session-based approach like CLI chat."""
+        if not self.http_session:
+            raise Exception("HTTP session not available")
+        
+        try:
+            # First, create or get session
+            async with self.http_session.post(
+                f"{self.server_url}/sessions",
+                json={
+                    "user_id": session_key,
+                    "interface": "discord",
+                    "interface_context": interface_context
+                }
+            ) as session_response:
+                if session_response.status == 200:
+                    session_data = await session_response.json()
+                    session_id = session_data.get('session_id')
+                else:
+                    raise Exception(f"Failed to create/get session: {session_response.status}")
+            
+            # Then send message to the session
+            async with self.http_session.post(
+                f"{self.server_url}/sessions/{session_id}/messages",
+                json={"message": message}
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data.get("response", "No response received")
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"Server responded with status {response.status}: {error_text}")
+                    
+        except aiohttp.ClientError as e:
+            raise Exception(f"Failed to connect to server: {e}")
     
     async def _send_message_to_server(self, message: str, user_id: str, interface_context: Dict[str, Any]) -> str:
         """Send a message to the unified server and get response."""
@@ -406,9 +445,6 @@ class UnifiedDiscordBotManager:
         await interaction.response.defer(ephemeral=private)
         
         try:
-            # Create user ID for Discord
-            user_id = f"discord:{interaction.user.id}"
-            
             # Prepare interface context
             interface_context = {
                 "interface": "discord",
@@ -421,10 +457,13 @@ class UnifiedDiscordBotManager:
                 }
             }
             
-            # Send message to unified server
-            response = await self.bot._send_message_to_server(
+            # Use session-based approach for consistency
+            session_key = f"discord_channel:{interaction.channel_id}"
+            
+            # Send message to unified server using session-based approach
+            response = await self.bot._send_message_to_server_with_session(
                 message=message,
-                user_id=user_id,
+                session_key=session_key,
                 interface_context=interface_context
             )
             

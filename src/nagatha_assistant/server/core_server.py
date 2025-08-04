@@ -10,7 +10,7 @@ import signal
 import sys
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 
 from nagatha_assistant.utils.logger import get_logger
@@ -282,42 +282,112 @@ class AgentSessionManager:
         self.sessions = {}
         self.user_sessions = {}  # Map user_id -> agent_session_id
         self.logger = get_logger(__name__)
+        self.memory_manager = None
+    
+    async def _ensure_memory_manager(self):
+        """Ensure memory manager is available."""
+        if self.memory_manager is None:
+            try:
+                from nagatha_assistant.core.memory import get_memory_manager
+                self.memory_manager = get_memory_manager()
+            except Exception as e:
+                self.logger.warning(f"Failed to get memory manager: {e}")
     
     async def get_or_create_session(self, user_id: str, interface: str, interface_context: Dict[str, Any] = None) -> int:
         """Get or create an agent session for the user."""
-        # Use user_id as the key for session persistence across interfaces
-        user_key = f"{user_id}_{interface}"
+        # Use a more intelligent session key strategy
+        # For Discord, use the channel_id to maintain conversation context within a channel
+        # For other interfaces, use user_id to maintain context across sessions
         
-        if user_key in self.user_sessions:
-            agent_session_id = self.user_sessions[user_key]
-            self.logger.debug(f"Reusing existing agent session {agent_session_id} for user {user_id}")
+        if interface == "discord" and interface_context and "channel_id" in interface_context:
+            # For Discord, use channel_id to maintain conversation context within a channel
+            session_key = f"discord_channel:{interface_context['channel_id']}"
+        else:
+            # For other interfaces, use user_id
+            session_key = f"{user_id}_{interface}"
+        
+        if session_key in self.user_sessions:
+            agent_session_id = self.user_sessions[session_key]
+            self.logger.debug(f"Reusing existing agent session {agent_session_id} for {session_key}")
+            
+            # Update session metadata
+            if str(agent_session_id) in self.sessions:
+                self.sessions[str(agent_session_id)]["last_activity"] = datetime.now().isoformat()
+                self.sessions[str(agent_session_id)]["interface_context"] = interface_context or {}
+            
             return agent_session_id
         
         try:
             # Create new agent session
             agent_session_id = await start_session()
-            self.user_sessions[user_key] = agent_session_id
+            self.user_sessions[session_key] = agent_session_id
             
             # Store session metadata
             self.sessions[str(agent_session_id)] = {
                 "session_id": agent_session_id,
                 "user_id": user_id,
                 "interface": interface,
+                "session_key": session_key,
                 "interface_context": interface_context or {},
                 "created_at": datetime.now().isoformat(),
+                "last_activity": datetime.now().isoformat(),
                 "status": "active"
             }
             
-            self.logger.info(f"Created new agent session {agent_session_id} for user {user_id} via {interface}")
+            # Initialize memory manager for this session
+            await self._ensure_memory_manager()
+            if self.memory_manager:
+                try:
+                    # Set initial session state
+                    await self.memory_manager.set_session_state(
+                        agent_session_id, 
+                        "interface", 
+                        interface
+                    )
+                    if interface_context:
+                        await self.memory_manager.set_session_state(
+                            agent_session_id,
+                            "interface_context",
+                            interface_context
+                        )
+                except Exception as e:
+                    self.logger.warning(f"Failed to set initial session state: {e}")
+            
+            self.logger.info(f"Created new agent session {agent_session_id} for {session_key}")
             return agent_session_id
             
         except Exception as e:
-            self.logger.exception(f"Error creating agent session for user {user_id}: {e}")
+            self.logger.error(f"Error creating agent session: {e}")
             raise
     
     def get_session_info(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Get session information."""
-        return self.sessions.get(session_id)
+        return self.sessions.get(str(session_id))
+    
+    async def cleanup_expired_sessions(self, max_age_hours: int = 24):
+        """Clean up expired sessions."""
+        cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
+        expired_sessions = []
+        
+        for session_id_str, session_info in self.sessions.items():
+            try:
+                last_activity = datetime.fromisoformat(session_info.get("last_activity", "1970-01-01T00:00:00"))
+                if last_activity < cutoff_time:
+                    expired_sessions.append(session_id_str)
+            except (ValueError, TypeError):
+                # If we can't parse the timestamp, consider it expired
+                expired_sessions.append(session_id_str)
+        
+        for session_id_str in expired_sessions:
+            session_info = self.sessions.pop(session_id_str, {})
+            session_key = session_info.get("session_key")
+            if session_key and session_key in self.user_sessions:
+                del self.user_sessions[session_key]
+            
+            self.logger.debug(f"Cleaned up expired session {session_id_str}")
+        
+        if expired_sessions:
+            self.logger.info(f"Cleaned up {len(expired_sessions)} expired sessions")
 
 
 # Global server instance
