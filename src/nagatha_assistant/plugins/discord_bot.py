@@ -282,14 +282,33 @@ class NagathaDiscordBot(commands.Bot):
     async def _handle_auto_chat_message(self, message: discord.Message):
         """Handle auto-chat message processing."""
         try:
-            # Import here to avoid circular imports
-            from nagatha_assistant.core.agent import send_message, start_session
+            # Use the unified server's session management for Discord channels
+            from nagatha_assistant.server.core_server import get_unified_server
             
-            # Create or get user session (use channel ID as a unique session identifier)
-            session_id = await start_session()
+            # Get unified server instance
+            server = await get_unified_server()
             
-            # Get AI response
-            response = await send_message(session_id, message.content)
+            # Create user ID and interface context for Discord
+            user_id = f"discord:{message.author.id}"
+            interface_context = {
+                "interface": "discord",
+                "channel_id": str(message.channel.id),
+                "guild_id": str(message.guild.id) if message.guild else None,
+                "message_id": str(message.id),
+                "author": {
+                    "id": str(message.author.id),
+                    "name": message.author.display_name,
+                    "bot": message.author.bot
+                }
+            }
+            
+            # Process message through unified server (this handles session management properly)
+            response = await server.process_message(
+                message=message.content,
+                user_id=user_id,
+                interface="discord",
+                interface_context=interface_context
+            )
             
             # Update usage statistics
             await update_auto_chat_usage(str(message.channel.id))

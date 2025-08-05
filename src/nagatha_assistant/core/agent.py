@@ -906,8 +906,7 @@ async def send_message(
                 
                 logger.info(f"Prepared {len(tools)} tools for OpenAI (filtered from {len(available_tools)} available)")
                 tool_names = [tool['function']['name'] for tool in tools]
-                logger.info(f"Tool names being sent to OpenAI: {tool_names}")
-                print(f"DEBUG: Tool names being sent to OpenAI: {tool_names}")
+                logger.debug(f"Tool names being sent to OpenAI: {tool_names}")
             
             # Call OpenAI
             try:

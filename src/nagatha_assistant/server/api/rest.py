@@ -81,8 +81,6 @@ class RESTAPI:
             interface = data.get('interface', 'unknown')
             interface_context = data.get('interface_context', {})
             
-            print(f"DEBUG: API received message: {message} from user: {user_id}")
-            
             if not message or not user_id:
                 return web.json_response(
                     {"error": "Missing required fields: message, user_id"}, 
@@ -97,7 +95,6 @@ class RESTAPI:
                 interface_context=interface_context
             )
             
-            print(f"DEBUG: API response: {response}")
             return web.json_response({"response": response})
             
         except Exception as e:
@@ -160,15 +157,38 @@ class RESTAPI:
                     status=400
                 )
             
-            # Process message through unified server
+            # Get the original session context to preserve interface and user_id
+            session_info = await self.server.get_session_info(session_id)
+            if session_info:
+                # Use the original session key that was used to create the session
+                # This is crucial for maintaining conversation context
+                session_key = session_info.get('session_key')
+                if session_key:
+                    # For Discord sessions, the session_key contains the channel info
+                    # Use it directly as the user_id to maintain context
+                    user_id = session_key
+                else:
+                    # Fallback to the original user_id
+                    user_id = session_info.get('user_id', f"session:{session_id}")
+                
+                interface = session_info.get('interface', 'api')
+                interface_context = session_info.get('interface_context', {"session_id": session_id})
+            else:
+                # Fallback to session-based approach
+                user_id = f"session:{session_id}"
+                interface = "api"
+                interface_context = {"session_id": session_id}
+            
+            # Process message through unified server with preserved context
             response = await self.server.process_message(
                 message=message,
-                user_id=f"session:{session_id}",
-                interface="api",
-                interface_context={"session_id": session_id}
+                user_id=user_id,
+                interface=interface,
+                interface_context=interface_context
             )
             
             return web.json_response({"response": response})
+            
         except Exception as e:
-            logger.exception(f"Error sending message: {e}")
+            logger.exception(f"Error sending message to session: {e}")
             return web.json_response({"error": str(e)}, status=500) 
