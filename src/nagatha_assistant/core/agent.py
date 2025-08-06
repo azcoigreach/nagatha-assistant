@@ -20,10 +20,17 @@ from nagatha_assistant.core.event import (
 
 # OpenAI client for conversations with timeout configuration
 OPENAI_TIMEOUT = float(os.getenv("OPENAI_TIMEOUT", "60"))  # 60 seconds for tool-heavy requests
-client = AsyncOpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    timeout=OPENAI_TIMEOUT
-)
+_client: Optional[AsyncOpenAI] = None
+
+def get_openai_client() -> AsyncOpenAI:
+    """Get the OpenAI client, initializing it lazily if needed."""
+    global _client
+    if _client is None:
+        _client = AsyncOpenAI(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            timeout=OPENAI_TIMEOUT
+        )
+    return _client
 
 # Push notification pub/sub for UIs and other listeners
 _push_callbacks: Dict[int, List[Callable[[Message], Awaitable[None]]]] = {}
@@ -910,7 +917,7 @@ async def send_message(
             
             # Call OpenAI
             try:
-                client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+                client = get_openai_client()
                 
                 response = await client.chat.completions.create(
                     model=model,
