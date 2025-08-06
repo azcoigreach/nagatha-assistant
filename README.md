@@ -42,14 +42,6 @@ src/nagatha_assistant/
 │   ├── memory.py         # Memory system plugin
 │   ├── echo_plugin.py    # Example plugin
 │   └── example_slash_commands.py # Discord slash command examples
-├── ui/                   # User interface components
-│   ├── dashboard.py      # Enhanced dashboard UI
-│   ├── widgets/          # Dashboard widget components
-│   └── ui.py             # Original Textual UI
-├── modules/              # Feature modules (notes, tasks, reminders)
-│   ├── notes.py
-│   ├── tasks.py
-│   └── reminders.py
 ├── utils/                # Utilities and helpers
 │   ├── logger.py         # Structured logging
 │   └── usage_tracker.py  # Token usage and cost tracking
