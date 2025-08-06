@@ -5,13 +5,13 @@ A simple plugin that demonstrates the plugin system by providing
 an echo command that returns the input text.
 """
 
-import logging
 from typing import Any, Dict
 
 from nagatha_assistant.core.plugin import SimplePlugin, PluginConfig, PluginCommand
 from nagatha_assistant.core.event import Event, StandardEventTypes
+from nagatha_assistant.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class EchoPlugin(SimplePlugin):

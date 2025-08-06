@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock, AsyncMock, mock_open
 from click.testing import CliRunner
-from nagatha_assistant.cli import cli, db_upgrade, db_backup, mcp_status, mcp_reload, run
+from nagatha_assistant.cli import cli, db_upgrade, db_backup, mcp_status, mcp_reload
 
 
 class TestCLI:
@@ -235,96 +235,7 @@ class TestCLI:
         assert "Reloading MCP configuration" in result.output
         assert "Reloaded with 2 tools from 2 servers" in result.output
 
-    @patch('nagatha_assistant.core.agent.shutdown')
-    @patch('nagatha_assistant.ui.run_app')
-    @patch('nagatha_assistant.core.agent.startup')
-    def test_run_command_no_config(self, mock_startup, mock_run_app, mock_shutdown):
-        """Test run command without mcp.json config."""
-        mock_startup.return_value = {
-            'connected': 0,
-            'total_configured': 0,
-            'total_tools': 0,
-            'connected_servers': [],
-            'failed_servers': []
-        }
-        mock_run_app.return_value = AsyncMock()
-        mock_shutdown.return_value = AsyncMock()
-        
-        with patch('os.path.exists', return_value=False):
-            result = self.runner.invoke(cli, ['run'])
-            
-            assert result.exit_code == 0
-            assert "No mcp.json found" in result.output
-            assert "No MCP servers connected" in result.output
 
-    @patch('nagatha_assistant.core.agent.startup')
-    def test_run_command_startup_failure(self, mock_startup):
-        """Test run command with startup failure."""
-        mock_startup.side_effect = Exception("Startup failed")
-        
-        with patch('os.path.exists', return_value=False):
-            result = self.runner.invoke(cli, ['run'])
-            
-            assert result.exit_code == 0
-            assert "Error during startup" in result.output
-
-    def test_run_command_keyboard_interrupt(self):
-        """Test run command with keyboard interrupt."""
-        with patch('nagatha_assistant.core.agent.startup', side_effect=KeyboardInterrupt()):
-            result = self.runner.invoke(cli, ['run'])
-            
-            assert result.exit_code == 0
-            assert "Shutting down Nagatha" in result.output
-
-    @patch('nagatha_assistant.core.agent.shutdown')
-    @patch('nagatha_assistant.ui.run_app')
-    @patch('nagatha_assistant.core.agent.startup')
-    def test_run_command_invalid_mcp_json(self, mock_startup, mock_run_app, mock_shutdown):
-        """Test run command with invalid mcp.json."""
-        mock_startup.return_value = {
-            'connected': 0,
-            'total_configured': 0,
-            'total_tools': 0,
-            'connected_servers': [],
-            'failed_servers': []
-        }
-        mock_run_app.return_value = AsyncMock()
-        mock_shutdown.return_value = AsyncMock()
-        
-        with patch('os.path.exists', return_value=True):
-            with patch('builtins.open', mock_open(read_data="invalid json")):
-                result = self.runner.invoke(cli, ['run'])
-                
-                assert result.exit_code == 0
-                assert "Could not read mcp.json" in result.output
-
-    @patch('nagatha_assistant.core.agent.shutdown')
-    @patch('nagatha_assistant.ui.run_app')
-    @patch('nagatha_assistant.core.agent.startup')
-    def test_environment_variable_handling(self, mock_startup, mock_run_app, mock_shutdown):
-        """Test handling of various environment variables."""
-        env_vars = {
-            'NAGATHA_MCP_CONNECTION_TIMEOUT': '10',
-            'NAGATHA_MCP_DISCOVERY_TIMEOUT': '5'
-        }
-        
-        mock_startup.return_value = {
-            'connected': 0,
-            'total_configured': 0,
-            'total_tools': 0,
-            'connected_servers': [],
-            'failed_servers': []
-        }
-        mock_run_app.return_value = AsyncMock()
-        mock_shutdown.return_value = AsyncMock()
-        
-        with patch.dict(os.environ, env_vars):
-            with patch('os.path.exists', return_value=False):
-                result = self.runner.invoke(cli, ['run'])
-                
-                assert result.exit_code == 0
-                assert "Connection timeout: 10s" in result.output
-                assert "Discovery timeout: 5s" in result.output
 
     def test_cli_module_constants(self):
         """Test that CLI module has expected constants."""
@@ -332,7 +243,7 @@ class TestCLI:
         assert hasattr(cli, 'cli')
         assert hasattr(cli, 'db')
         assert hasattr(cli, 'mcp')
-        assert hasattr(cli, 'run')
+
 
     @patch('alembic.command')
     @patch('alembic.config.Config')
@@ -353,24 +264,7 @@ class TestCLI:
                 # Should call Config.set_main_option with converted URL
                 mock_cfg.set_main_option.assert_any_call("sqlalchemy.url", expected_url)
 
-    def test_run_command_failed_servers(self):
-        """Test run command with failed server connections."""
-        with patch('nagatha_assistant.core.agent.startup') as mock_startup:
-            mock_startup.return_value = {
-                'connected': 1,
-                'total_configured': 2,
-                'total_tools': 3,
-                'connected_servers': ['server1'],
-                'failed_servers': [('server2', 'Connection timeout')]
-            }
-            with patch('nagatha_assistant.ui.run_app'):
-                with patch('nagatha_assistant.core.agent.shutdown'):
-                    with patch('os.path.exists', return_value=False):
-                        result = self.runner.invoke(cli, ['run'])
-                        
-                        assert result.exit_code == 0
-                        assert "Failed connections:" in result.output
-                        assert "server2: Connection timeout" in result.output
+
 
     def test_mcp_status_no_tools(self):
         """Test MCP status with no tools available."""
@@ -440,28 +334,4 @@ class TestCLI:
             assert "python test.py" in result.output
             assert "(stdio)" in result.output
 
-    def test_run_command_shutdown_error(self):
-        """Test run command handles shutdown errors gracefully."""
-        with patch('nagatha_assistant.core.agent.startup') as mock_startup:
-            mock_startup.return_value = {
-                'connected': 0,
-                'total_configured': 0,
-                'total_tools': 0,
-                'connected_servers': [],
-                'failed_servers': []
-            }
-            with patch('nagatha_assistant.ui.run_app'):
-                with patch('nagatha_assistant.core.agent.shutdown', side_effect=Exception("Shutdown error")):
-                    with patch('os.path.exists', return_value=False):
-                        result = self.runner.invoke(cli, ['run'])
-                        
-                        assert result.exit_code == 0
-                        assert "Error during shutdown" in result.output
-
-    def test_run_command_simple(self):
-        """Test run command with mocked dependencies.""" 
-        with patch('nagatha_assistant.core.agent.startup'):
-            with patch('nagatha_assistant.ui.run_app', side_effect=KeyboardInterrupt()):
-                with patch('nagatha_assistant.core.agent.shutdown'):
-                    result = self.runner.invoke(cli, ['run'])
-                    assert "Nagatha" in result.output 
+ 

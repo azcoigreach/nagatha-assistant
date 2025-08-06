@@ -5,7 +5,6 @@ This plugin provides task scheduling and management capabilities through the
 existing plugin system, integrating with the Celery scheduler.
 """
 
-import logging
 import json
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -14,8 +13,9 @@ from ..core.plugin import SimplePlugin, PluginConfig
 from ..core.scheduler import get_scheduler, schedule_task, cancel_task, list_scheduled_tasks
 from ..core.event import Event, StandardEventTypes, create_system_event
 from ..plugins.tasks import list_available_tasks, get_task
+from nagatha_assistant.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class TaskManagerPlugin(SimplePlugin):

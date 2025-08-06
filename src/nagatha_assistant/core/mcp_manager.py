@@ -7,7 +7,6 @@ Uses on-demand connections like the working test client approach.
 
 import asyncio
 import json
-import logging
 import os
 import time
 from dataclasses import dataclass
@@ -17,6 +16,7 @@ import re
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamablehttp_client
+from nagatha_assistant.utils.logger import get_logger
 
 @dataclass
 class MCPServerConfig:
@@ -54,7 +54,7 @@ class MCPManager:
         self.tools: Dict[str, MCPTool] = {}
         self.server_statuses: Dict[str, MCPServerStatus] = {}
         self._initialized = False
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger()
 
     def _load_config(self) -> Dict[str, MCPServerConfig]:
         """Load MCP server configurations from JSON file."""
@@ -304,6 +304,22 @@ class MCPManager:
         # Add extra debugging for TaskGroup errors
         self.logger.debug(f"Calling tool '{tool_name}' on server '{tool.server_name}' with args: {arguments}")
         
+        # Ensure arguments are properly serializable
+        try:
+            json.dumps(arguments)
+        except (TypeError, ValueError) as e:
+            self.logger.warning(f"Tool '{tool_name}' arguments are not JSON serializable: {e}")
+            # Convert non-serializable values to strings
+            sanitized_args = {}
+            for key, value in arguments.items():
+                try:
+                    json.dumps(value)
+                    sanitized_args[key] = value
+                except (TypeError, ValueError):
+                    sanitized_args[key] = str(value)
+            arguments = sanitized_args
+            self.logger.debug(f"Sanitized arguments for tool '{tool_name}': {arguments}")
+        
         try:
             # Create fresh connection using the working test client approach
             if config.transport == "stdio":
@@ -327,6 +343,17 @@ class MCPManager:
                         # Call the tool with the original tool name (not the sanitized one)
                         result = await session.call_tool(tool.name, arguments)
                         self.logger.debug(f"Tool '{tool_name}' completed successfully")
+                        
+                        # Ensure the result is properly serializable
+                        if result is not None:
+                            try:
+                                # Try to serialize to ensure it's valid JSON
+                                json.dumps(result)
+                            except (TypeError, ValueError) as e:
+                                self.logger.warning(f"Tool '{tool_name}' returned non-serializable result: {e}")
+                                # Convert to string if it can't be serialized
+                                result = str(result)
+                        
                         return result
                         
             elif config.transport == "http":

@@ -4,7 +4,6 @@ Demo script to show the Event Bus System working in Nagatha Assistant.
 """
 
 import asyncio
-import logging
 from typing import List
 
 from nagatha_assistant.core.event_bus import get_event_bus, ensure_event_bus_started
@@ -12,10 +11,12 @@ from nagatha_assistant.core.event import (
     Event, EventPriority, StandardEventTypes,
     create_system_event, create_agent_event, create_mcp_event
 )
+from nagatha_assistant.utils.logger import get_logger
 
 # Set up logging to see events
+import logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 async def demo_event_system():

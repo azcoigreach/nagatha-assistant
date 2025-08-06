@@ -12,15 +12,15 @@ API of :func:`record_usage` can remain unchanged.
 from __future__ import annotations
 
 import json
-import logging
 import os
 import threading
 from datetime import datetime
 from pathlib import Path
 from typing import MutableMapping
 
+from nagatha_assistant.utils.logger import get_logger
 
-_log = logging.getLogger()
+_log = get_logger()
 
 # ---------------------------------------------------------------------------
 # Pricing table

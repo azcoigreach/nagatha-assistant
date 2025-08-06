@@ -7,7 +7,6 @@ time specification capabilities.
 """
 
 import asyncio
-import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, Union, List, Callable
 from celery.schedules import crontab, timedelta as celery_timedelta
@@ -17,8 +16,9 @@ import re
 from .celery_app import celery_app, add_periodic_task, remove_periodic_task, get_beat_schedule
 from .event import Event, StandardEventTypes, create_system_event
 from .event_bus import get_event_bus
+from nagatha_assistant.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 # Initialize parsedatetime calendar
 cal = parsedatetime.Calendar()
@@ -102,6 +102,96 @@ class TaskScheduler:
         
         raise ValueError(f"Could not parse time specification: {time_spec}")
     
+    def _parse_every_format(self, time_spec: str) -> celery_timedelta:
+        """Parse 'every X seconds/minutes/hours/days' format."""
+        pattern = r'every (\d+) (second|minute|hour|day|week)s?'
+        match = re.match(pattern, time_spec)
+        if match:
+            amount = int(match.group(1))
+            unit = match.group(2)
+            if unit == 'second':
+                return celery_timedelta(seconds=amount)
+            elif unit == 'minute':
+                return celery_timedelta(minutes=amount)
+            elif unit == 'hour':
+                return celery_timedelta(hours=amount)
+            elif unit == 'day':
+                return celery_timedelta(days=amount)
+            elif unit == 'week':
+                return celery_timedelta(weeks=amount)
+        
+        # Handle abbreviated forms like "secs", "mins"
+        pattern = r'every (\d+) (secs?|mins?|hrs?)'
+        match = re.match(pattern, time_spec)
+        if match:
+            amount = int(match.group(1))
+            unit = match.group(2)
+            if unit.startswith('sec'):
+                return celery_timedelta(seconds=amount)
+            elif unit.startswith('min'):
+                return celery_timedelta(minutes=amount)
+            elif unit.startswith('hr'):
+                return celery_timedelta(hours=amount)
+        
+        raise ValueError(f"Could not parse 'every' format: {time_spec}")
+    
+    def _parse_every_day_at_format(self, time_spec: str) -> crontab:
+        """Parse 'every day at HH:MM' format."""
+        pattern = r'every day at (\d{1,2}):(\d{2})'
+        match = re.match(pattern, time_spec)
+        if match:
+            hour = int(match.group(1))
+            minute = int(match.group(2))
+            return crontab(hour=hour, minute=minute)
+        raise ValueError(f"Could not parse 'every day at' format: {time_spec}")
+    
+    def _parse_every_day_at_specific_time_format(self, time_spec: str) -> crontab:
+        """Parse 'every monday at HH:MM' format."""
+        days = {
+            'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4,
+            'friday': 5, 'saturday': 6, 'sunday': 0
+        }
+        pattern = r'every (monday|tuesday|wednesday|thursday|friday|saturday|sunday) at (\d{1,2}):(\d{2})'
+        match = re.match(pattern, time_spec)
+        if match:
+            day_name = match.group(1)
+            hour = int(match.group(2))
+            minute = int(match.group(3))
+            day_of_week = days[day_name]
+            return crontab(hour=hour, minute=minute, day_of_week=day_of_week)
+        raise ValueError(f"Could not parse day-specific format: {time_spec}")
+    
+    def _parse_cron_like_syntax(self, time_spec: str) -> crontab:
+        """Parse cron-like syntax."""
+        # Simple implementation for basic cron patterns
+        if time_spec.startswith('*/'):
+            # Handle */5 * * * * format (every 5 minutes)
+            pattern = r'^\*/(\d+) \* \* \* \*$'
+            match = re.match(pattern, time_spec)
+            if match:
+                interval = int(match.group(1))
+                return crontab(minute=f'*/{interval}')
+        raise ValueError(f"Could not parse cron syntax: {time_spec}")
+    
+    def _parse_standard_cron_expression(self, time_spec: str) -> crontab:
+        """Parse standard cron expression."""
+        parts = time_spec.split()
+        if len(parts) == 5:
+            minute, hour, day, month, day_of_week = parts
+            kwargs = {}
+            if minute != '*':
+                kwargs['minute'] = minute
+            if hour != '*':
+                kwargs['hour'] = hour
+            if day != '*':
+                kwargs['day_of_month'] = day
+            if month != '*':
+                kwargs['month_of_year'] = month
+            if day_of_week != '*':
+                kwargs['day_of_week'] = day_of_week
+            return crontab(**kwargs)
+        raise ValueError(f"Invalid cron expression: {time_spec}")
+
     def schedule_task(self, task_name: str, schedule: Union[str, datetime, timedelta, crontab],
                      args: Optional[tuple] = None, kwargs: Optional[Dict[str, Any]] = None,
                      task_id: Optional[str] = None) -> str:

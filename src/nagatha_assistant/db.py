@@ -3,7 +3,8 @@ from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from functools import lru_cache
-import concurrent.futures, asyncio, logging, pathlib, threading
+import concurrent.futures, asyncio, pathlib, threading
+from nagatha_assistant.utils.logger import get_logger
 
 
 # Load environment variables
@@ -13,8 +14,12 @@ root_path = pathlib.Path(__file__).resolve().parents[2]
 default_db = root_path / "nagatha.db"
 # Database URL, defaulting to local SQLite file in project root
 raw_url = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{default_db}")
+
+# Convert URLs to use async drivers
 if raw_url.startswith("sqlite:///") and not raw_url.startswith("sqlite+aiosqlite:///"):
     DATABASE_URL = raw_url.replace("sqlite:///", "sqlite+aiosqlite:///")
+elif raw_url.startswith("postgresql://") and not raw_url.startswith("postgresql+asyncpg://"):
+    DATABASE_URL = raw_url.replace("postgresql://", "postgresql+asyncpg://")
 else:
     DATABASE_URL = raw_url
 
@@ -71,11 +76,13 @@ def _migration_runner() -> None:
             command.upgrade(cfg, "head")
         except Exception as exc:  # noqa: BLE001
             if "already exists" in str(exc):
-                logging.getLogger().debug("Schema already present, skip Alembic upgrade")
+                logger = get_logger()
+                logger.debug("Schema already present, skip Alembic upgrade")
             else:
                 raise
     except ModuleNotFoundError:
-        logging.getLogger().warning(
+        logger = get_logger()
+        logger.warning(
             "Alembic not installed – falling back to metadata.create_all()"
         )
 

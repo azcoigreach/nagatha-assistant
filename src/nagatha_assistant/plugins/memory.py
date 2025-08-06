@@ -6,13 +6,14 @@ during AI conversations, allowing Nagatha to store and retrieve information
 across sessions.
 """
 
-import logging
+import json
 from typing import Any, Dict, List, Optional, Union
 
 from nagatha_assistant.core.plugin import BasePlugin, PluginCommand, PluginConfig
 from nagatha_assistant.core.memory import ensure_memory_manager_started
+from nagatha_assistant.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class MemoryPlugin(BasePlugin):

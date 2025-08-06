@@ -5,7 +5,6 @@ This module defines common tasks that can be scheduled and executed by the Celer
 Tasks integrate with the existing event system and can be used by plugins and MCPs.
 """
 
-import logging
 import os
 import subprocess
 import json
@@ -17,8 +16,9 @@ from ..core.celery_app import celery_app
 from ..core.event import Event, StandardEventTypes, create_system_event
 from ..core.event_bus import get_event_bus
 from ..core.memory import get_memory_manager
+from nagatha_assistant.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 event_bus = get_event_bus()
 
 
@@ -275,7 +275,7 @@ def cleanup_logs(self, days_to_keep: int = 7):
 
 
 @celery_app.task(bind=True, name='nagatha.memory.backup')
-def backup_memory(self, section: Optional[str] = None):
+async def backup_memory(self, section: Optional[str] = None):
     """Backup memory data to file."""
     task_id = self.request.id
     
@@ -449,7 +449,7 @@ def send_notification(self, message: str, notification_type: str = "info",
 
 
 @celery_app.task(bind=True, name='nagatha.memory.cleanup')
-def cleanup_memory(self, section: Optional[str] = None, days_old: int = 30):
+async def cleanup_memory(self, section: Optional[str] = None, days_old: int = 30):
     """Clean up old memory entries."""
     task_id = self.request.id
     

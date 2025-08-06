@@ -5,7 +5,6 @@ This module provides the fundamental slash commands that integrate with
 Nagatha's core functionality like chat, notes, tasks, and system status.
 """
 
-import logging
 from typing import Optional
 
 import discord
@@ -13,8 +12,9 @@ from discord import app_commands
 
 from .slash_command_manager import BaseSlashCommand, SlashCommandDefinition, SlashCommandOption
 from .agent import send_message, start_session
+from nagatha_assistant.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class ChatSlashCommand(BaseSlashCommand):

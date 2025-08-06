@@ -113,7 +113,7 @@ class Reminder(Base):
     id = Column(Integer, primary_key=True, index=True)
     task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
     remind_at = Column(DateTime(timezone=True), nullable=False)
-    delivered = Column(Boolean, nullable=False, server_default="0")
+    delivered = Column(Boolean, nullable=False, server_default="false")
     recurrence = Column(String(20), nullable=True)  # daily, weekly, monthly, yearly
     last_sent_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -183,7 +183,7 @@ class DiscordAutoChat(Base):
     id = Column(Integer, primary_key=True, index=True)
     channel_id = Column(String(255), unique=True, nullable=False, index=True)  # Discord channel/DM ID
     guild_id = Column(String(255), nullable=True, index=True)  # Discord guild ID (null for DMs)
-    enabled = Column(Boolean, nullable=False, server_default="0")  # Auto-chat enabled/disabled
+    enabled = Column(Boolean, nullable=False, server_default="false")  # Auto-chat enabled/disabled
     enabled_by_user_id = Column(String(255), nullable=False)  # Discord user ID who enabled it
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

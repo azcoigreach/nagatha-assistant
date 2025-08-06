@@ -6,7 +6,6 @@ including plugin definitions, lifecycle management, and registration.
 """
 
 import asyncio
-import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -14,8 +13,9 @@ from typing import Any, Dict, List, Optional, Set, Callable, Awaitable
 
 from .event import Event, EventHandler
 from .event_bus import get_event_bus
+from nagatha_assistant.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class PluginState(Enum):
@@ -73,7 +73,7 @@ class BasePlugin(ABC):
         """
         self.config = config
         self.state = PluginState.LOADED
-        self.logger = logging.getLogger(f"plugin.{config.name}")
+        self.logger = get_logger(f"plugin.{config.name}")
         self._event_subscriptions: List[int] = []
         self._registered_commands: Set[str] = set()
         self._event_bus = get_event_bus()

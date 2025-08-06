@@ -6,7 +6,6 @@ providing AI assistant capabilities through Discord channels.
 """
 
 import os
-import logging
 import asyncio
 from typing import Any, Dict, Optional, List
 from datetime import datetime, timedelta
@@ -19,7 +18,7 @@ from nagatha_assistant.core.plugin import SimplePlugin, PluginConfig, PluginComm
 from nagatha_assistant.core.event import Event, StandardEventTypes, create_system_event
 from nagatha_assistant.core.slash_command_manager import SlashCommandManager
 from nagatha_assistant.core.slash_commands import ChatSlashCommand, StatusSlashCommand, HelpSlashCommand
-from nagatha_assistant.utils.logger import setup_logger_with_env_control
+from nagatha_assistant.utils.logger import setup_logger_with_env_control, get_logger
 from nagatha_assistant.db_models import DiscordAutoChat
 from nagatha_assistant.db import SessionLocal
 
@@ -72,25 +71,51 @@ async def is_auto_chat_enabled(channel_id: str) -> bool:
     return setting is not None and setting.enabled
 
 
-async def should_rate_limit(channel_id: str, max_messages_per_hour: int = 20) -> bool:
+async def should_rate_limit(channel_id: str, max_messages_per_hour: int = None) -> bool:
     """Check if we should rate limit auto-chat responses."""
+    # Get rate limit from environment or use default
+    if max_messages_per_hour is None:
+        import os
+        # Check if rate limiting is disabled entirely
+        if os.getenv('DISCORD_DISABLE_RATE_LIMIT', '').lower() in ('true', '1', 'yes', 'on'):
+            return False
+        max_messages_per_hour = int(os.getenv('DISCORD_AUTO_CHAT_RATE_LIMIT', '100'))
+    
     setting = await get_auto_chat_setting(str(channel_id))
     if not setting:
         return True
     
     # Reset daily counter if it's a new day
-    now = datetime.now()
-    if setting.last_message_at and setting.last_message_at.date() < now.date():
-        async with SessionLocal() as session:
-            setting.message_count = 0
-            setting.last_message_at = now
-            session.add(setting)
-            await session.commit()
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    
+    if setting.last_message_at:
+        # Ensure both datetimes are timezone-aware for comparison
+        if setting.last_message_at.tzinfo is None:
+            # If last_message_at is naive, assume UTC
+            last_message_at = setting.last_message_at.replace(tzinfo=timezone.utc)
+        else:
+            last_message_at = setting.last_message_at
+        
+        if last_message_at.date() < now.date():
+            async with SessionLocal() as session:
+                setting.message_count = 0
+                setting.last_message_at = now
+                session.add(setting)
+                await session.commit()
     
     # Check hourly rate limit
     if setting.last_message_at:
+        # Ensure both datetimes are timezone-aware for comparison
+        if setting.last_message_at.tzinfo is None:
+            # If last_message_at is naive, assume UTC
+            last_message_at = setting.last_message_at.replace(tzinfo=timezone.utc)
+        else:
+            last_message_at = setting.last_message_at
+        
         hour_ago = now - timedelta(hours=1)
-        if setting.last_message_at > hour_ago and setting.message_count >= max_messages_per_hour:
+        if last_message_at > hour_ago and setting.message_count >= max_messages_per_hour:
+            logger.debug(f"Rate limiting auto-chat in channel {channel_id}: {setting.message_count}/{max_messages_per_hour} messages in the last hour")
             return True
     
     return False
@@ -100,6 +125,7 @@ async def update_auto_chat_usage(channel_id: str):
     """Update auto-chat usage statistics."""
     async with SessionLocal() as session:
         from sqlalchemy import select
+        from datetime import datetime, timezone
         
         stmt = select(DiscordAutoChat).where(DiscordAutoChat.channel_id == str(channel_id))
         result = await session.execute(stmt)
@@ -107,7 +133,7 @@ async def update_auto_chat_usage(channel_id: str):
         
         if setting:
             setting.message_count += 1
-            setting.last_message_at = datetime.now()
+            setting.last_message_at = datetime.now(timezone.utc)
             await session.commit()
 
 
@@ -256,14 +282,33 @@ class NagathaDiscordBot(commands.Bot):
     async def _handle_auto_chat_message(self, message: discord.Message):
         """Handle auto-chat message processing."""
         try:
-            # Import here to avoid circular imports
-            from ..core.agent import send_message, start_session
+            # Use the unified server's session management for Discord channels
+            from nagatha_assistant.server.core_server import get_unified_server
             
-            # Create or get user session (use channel ID as a unique session identifier)
-            session_id = await start_session()
+            # Get unified server instance
+            server = await get_unified_server()
             
-            # Get AI response
-            response = await send_message(session_id, message.content)
+            # Create user ID and interface context for Discord
+            user_id = f"discord:{message.author.id}"
+            interface_context = {
+                "interface": "discord",
+                "channel_id": str(message.channel.id),
+                "guild_id": str(message.guild.id) if message.guild else None,
+                "message_id": str(message.id),
+                "author": {
+                    "id": str(message.author.id),
+                    "name": message.author.display_name,
+                    "bot": message.author.bot
+                }
+            }
+            
+            # Process message through unified server (this handles session management properly)
+            response = await server.process_message(
+                message=message.content,
+                user_id=user_id,
+                interface="discord",
+                interface_context=interface_context
+            )
             
             # Update usage statistics
             await update_auto_chat_usage(str(message.channel.id))
@@ -639,11 +684,11 @@ class DiscordBotPlugin(SimplePlugin):
 
     async def _handle_chat_command(self, interaction: discord.Interaction, message: str, private: bool = False):
         """Handle the /chat slash command."""
-        # Defer response since AI calls can take time
-        await interaction.response.defer(ephemeral=private)
-        
         try:
-            from ..core.agent import send_message, start_session
+            # Defer response since AI calls can take time
+            await interaction.response.defer(ephemeral=private)
+            
+            from nagatha_assistant.core.agent import send_message, start_session
             
             # Create or get user session
             user_id = str(interaction.user.id)
@@ -668,61 +713,82 @@ class DiscordBotPlugin(SimplePlugin):
                 
         except Exception as e:
             logger.exception(f"Error in chat command: {e}")
-            await interaction.followup.send(
-                f"❌ Sorry, I encountered an error: {str(e)}", 
-                ephemeral=True
-            )
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        f"❌ Sorry, I encountered an error: {str(e)}", 
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        f"❌ Sorry, I encountered an error: {str(e)}", 
+                        ephemeral=True
+                    )
+            except Exception as send_error:
+                logger.error(f"Failed to send error message: {send_error}")
     
     async def _handle_status_command(self, interaction: discord.Interaction):
         """Handle the /status slash command."""
-        await interaction.response.defer()
-        
         try:
-            from ..core.mcp_manager import get_mcp_manager
-            from ..core.plugin_manager import get_plugin_manager
+            # Defer response since status calls can take time
+            await interaction.response.defer()
+            
+            from nagatha_assistant.core.mcp_manager import get_mcp_manager
+            from nagatha_assistant.core.plugin_manager import get_plugin_manager
             
             # Get MCP status
-            try:
-                mcp_manager = await get_mcp_manager()
-                mcp_status = await mcp_manager.get_status()
-                mcp_servers = len(mcp_status.get("servers", {}))
-                mcp_tools = sum(len(server.get("tools", [])) for server in mcp_status.get("servers", {}).values())
-            except Exception:
-                mcp_servers = 0
-                mcp_tools = 0
+            mcp_manager = await get_mcp_manager()
+            mcp_status = mcp_manager.get_initialization_summary()
             
             # Get plugin status
-            try:
-                plugin_manager = get_plugin_manager()
-                plugin_status = plugin_manager.get_plugin_status()
-                active_plugins = sum(1 for p in plugin_status.values() if p["state"] == "started")
-                total_plugins = len(plugin_status)
-            except Exception:
-                active_plugins = 0
-                total_plugins = 0
+            plugin_manager = get_plugin_manager()
+            plugin_status = plugin_manager.get_plugin_status()
             
             # Build status response
-            response = "🤖 **Nagatha Assistant Status**\n\n"
-            response += f"**Discord Bot:** ✅ Online\n"
-            response += f"**Active Plugins:** {active_plugins}/{total_plugins}\n"
-            response += f"**MCP Servers:** {mcp_servers}\n" 
-            response += f"**Available Tools:** {mcp_tools}\n\n"
+            response = "🤖 **Nagatha System Status**\n\n"
             
-            # Add plugin details
-            if plugin_status:
-                response += "**Plugin Status:**\n"
-                for name, status in plugin_status.items():
-                    state_emoji = "✅" if status["state"] == "started" else "❌"
-                    response += f"{state_emoji} {name} ({status['state']})\n"
+            # MCP Status
+            response += "**MCP Servers:**\n"
+            if mcp_status['connected'] > 0:
+                response += f"✅ {mcp_status['connected']}/{mcp_status['total_configured']} servers connected\n"
+                response += f"🔧 {mcp_status['total_tools']} tools available\n"
+            else:
+                response += "❌ No MCP servers connected\n"
+            
+            # Plugin Status
+            response += "\n**Plugins:**\n"
+            active_plugins = [name for name, status in plugin_status.items() if status.get('state') == 'started']
+            if active_plugins:
+                response += f"✅ {len(active_plugins)} plugins active\n"
+                for plugin in active_plugins[:3]:  # Show first 3
+                    response += f"  • {plugin}\n"
+                if len(active_plugins) > 3:
+                    response += f"  • ... and {len(active_plugins) - 3} more\n"
+            else:
+                response += "❌ No plugins active\n"
+            
+            # Bot Status
+            response += "\n**Bot Status:**\n"
+            response += "✅ Connected to Discord\n"
+            response += f"📊 {len(self.bot.guilds)} servers connected\n"
             
             await interaction.followup.send(response)
             
         except Exception as e:
             logger.exception(f"Error in status command: {e}")
-            await interaction.followup.send(
-                f"❌ Error getting status: {str(e)}", 
-                ephemeral=True
-            )
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        f"❌ Error getting status: {str(e)}", 
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        f"❌ Error getting status: {str(e)}", 
+                        ephemeral=True
+                    )
+            except Exception as send_error:
+                logger.error(f"Failed to send error message: {send_error}")
     
     async def _handle_help_command(self, interaction: discord.Interaction):
         """Handle the /help slash command."""
@@ -759,9 +825,10 @@ class DiscordBotPlugin(SimplePlugin):
     
     async def _handle_auto_chat_command(self, interaction: discord.Interaction, action: str):
         """Handle the /auto-chat slash command."""
-        await interaction.response.defer()
-        
         try:
+            # Defer the response first
+            await interaction.response.defer()
+            
             channel_id = str(interaction.channel_id)
             guild_id = str(interaction.guild_id) if interaction.guild_id else None
             user_id = str(interaction.user.id)
@@ -800,7 +867,7 @@ class DiscordBotPlugin(SimplePlugin):
                 response += "Nagatha will now automatically respond to all messages in this channel.\n\n"
                 response += "**Features:**\n"
                 response += "• Natural conversation without `/chat` commands\n"
-                response += "• Rate limited to prevent spam (20 messages/hour)\n"
+                response += "• Rate limited to prevent spam (100 messages/hour)\n"
                 response += "• Ignores bot messages and system messages\n\n"
                 response += "Use `/auto-chat off` to disable or `/auto-chat status` to check usage."
                 
@@ -844,10 +911,19 @@ class DiscordBotPlugin(SimplePlugin):
             
         except Exception as e:
             logger.exception(f"Error in auto-chat command: {e}")
-            await interaction.followup.send(
-                f"❌ Error managing auto-chat: {str(e)}", 
-                ephemeral=True
-            )
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        f"❌ Error managing auto-chat: {str(e)}", 
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        f"❌ Error managing auto-chat: {str(e)}", 
+                        ephemeral=True
+                    )
+            except Exception as send_error:
+                logger.error(f"Failed to send error message: {send_error}")
     
     def add_slash_command(self, name: str, description: str, handler: callable, **kwargs) -> bool:
         """

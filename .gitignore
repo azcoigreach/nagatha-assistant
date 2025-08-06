@@ -16,3 +16,4 @@ mcp.json
 .nagatha_usage.json
 dump.rdb
 celerybeat-schedule
+nohup.out

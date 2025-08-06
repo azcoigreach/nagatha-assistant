@@ -9,20 +9,21 @@ and retrieve information across sessions, including:
 - Memory sections with different persistence levels
 - Memory search capabilities
 - Event bus integration for change notifications
+- Short-term memory integration for conversation context
 """
 
 import asyncio
-import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Union
 from enum import Enum
 
-from nagatha_assistant.core.storage import StorageBackend, DatabaseStorageBackend, InMemoryStorageBackend
+from nagatha_assistant.core.storage import StorageBackend, HybridStorageBackend, DatabaseStorageBackend, InMemoryStorageBackend
+from nagatha_assistant.core.short_term_memory import get_short_term_memory, ensure_short_term_memory_started
 from nagatha_assistant.core.event_bus import get_event_bus
 from nagatha_assistant.core.event import StandardEventTypes, create_memory_event, EventPriority
-from nagatha_assistant.utils.logger import setup_logger_with_env_control
+from nagatha_assistant.utils.logger import setup_logger_with_env_control, get_logger
 
-logger = setup_logger_with_env_control()
+logger = get_logger()
 
 
 class PersistenceLevel(Enum):
@@ -64,6 +65,8 @@ class MemoryManager:
                                  "Short-term temporary data"),
         "personality": MemorySection("personality", PersistenceLevel.PERMANENT,
                                    "Dynamic personality traits, inflection styles, and interaction preferences"),
+        "conversation_context": MemorySection("conversation_context", PersistenceLevel.SESSION,
+                                            "Recent conversation context and messages"),
     }
     
     def __init__(self, storage_backend: Optional[StorageBackend] = None):
@@ -71,9 +74,10 @@ class MemoryManager:
         Initialize the memory manager.
         
         Args:
-            storage_backend: Optional storage backend. Defaults to DatabaseStorageBackend.
+            storage_backend: Optional storage backend. Defaults to HybridStorageBackend.
         """
-        self._storage = storage_backend or DatabaseStorageBackend()
+        self._storage = storage_backend or HybridStorageBackend()
+        self._short_term_memory = None
         self._cleanup_task: Optional[asyncio.Task] = None
         self._running = False
     
@@ -83,6 +87,18 @@ class MemoryManager:
             return
         
         self._running = True
+        
+        # Start the storage backend if it has a start method
+        if hasattr(self._storage, 'start'):
+            await self._storage.start()
+        
+        # Start short-term memory
+        try:
+            self._short_term_memory = await ensure_short_term_memory_started()
+        except Exception as e:
+            logger.warning(f"Failed to start short-term memory: {e}")
+            self._short_term_memory = None
+        
         # Start cleanup task for expired entries
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
         logger.info("Memory manager started")
@@ -100,6 +116,10 @@ class MemoryManager:
                 await self._cleanup_task
             except asyncio.CancelledError:
                 pass
+        
+        # Stop the storage backend if it has a stop method
+        if hasattr(self._storage, 'stop'):
+            await self._storage.stop()
         
         logger.info("Memory manager stopped")
     
@@ -120,6 +140,15 @@ class MemoryManager:
             expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
         
         await self._storage.set(section, key, value, session_id, expires_at)
+        
+        # Also store in short-term memory for conversation context
+        if section == "conversation_context" and self._short_term_memory:
+            try:
+                await self._short_term_memory.set_temporary_data(
+                    f"conv_{session_id}_{key}", value, ttl_seconds or 3600
+                )
+            except Exception as e:
+                logger.warning(f"Failed to store in short-term memory: {e}")
         
         # Publish event
         try:
@@ -173,6 +202,13 @@ class MemoryManager:
             True if the key was found and deleted, False otherwise
         """
         deleted = await self._storage.delete(section, key, session_id)
+        
+        # Also delete from short-term memory
+        if section == "conversation_context" and self._short_term_memory:
+            try:
+                await self._short_term_memory.get_temporary_data(f"conv_{session_id}_{key}")
+            except Exception as e:
+                logger.warning(f"Failed to delete from short-term memory: {e}")
         
         if deleted:
             # Publish event
@@ -253,6 +289,13 @@ class MemoryManager:
     async def set_session_state(self, session_id: int, key: str, value: Any) -> None:
         """Set session-specific state."""
         await self.set("session_state", key, value, session_id=session_id)
+        
+        # Also update short-term memory session state
+        if self._short_term_memory:
+            try:
+                await self._short_term_memory.update_session_state(session_id, {key: value})
+            except Exception as e:
+                logger.warning(f"Failed to update short-term session state: {e}")
     
     async def get_session_state(self, session_id: int, key: str, default: Any = None) -> Any:
         """Get session-specific state."""
@@ -307,6 +350,123 @@ class MemoryManager:
         """Get temporary data."""
         return await self.get("temporary", key, default=default)
     
+    async def add_conversation_context(self, session_id: int, message_id: int, 
+                                     role: str, content: str, 
+                                     metadata: Dict[str, Any] = None) -> None:
+        """
+        Add a message to conversation context (both long-term and short-term memory).
+        
+        Args:
+            session_id: Session identifier
+            message_id: Message identifier
+            role: Message role (user/assistant)
+            content: Message content
+            metadata: Additional metadata
+        """
+        # Store in long-term memory
+        context_data = {
+            "session_id": session_id,
+            "message_id": message_id,
+            "role": role,
+            "content": content,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "metadata": metadata or {}
+        }
+        
+        key = f"{message_id}_{session_id}"
+        await self.set("conversation_context", key, context_data, session_id=session_id, ttl_seconds=7200)
+        
+        # Also store in short-term memory for fast access
+        if self._short_term_memory:
+            try:
+                await self._short_term_memory.add_conversation_context(
+                    session_id, message_id, role, content, metadata
+                )
+            except Exception as e:
+                logger.warning(f"Failed to add to short-term conversation context: {e}")
+    
+    async def get_conversation_context(self, session_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Get recent conversation context for a session.
+        
+        Args:
+            session_id: Session identifier
+            limit: Maximum number of messages to retrieve
+        
+        Returns:
+            List of conversation context entries
+        """
+        # Try short-term memory first for fast access
+        if self._short_term_memory:
+            try:
+                contexts = await self._short_term_memory.get_conversation_context(session_id, limit)
+                if contexts:
+                    # Convert to the expected format
+                    return [
+                        {
+                            "key": f"{ctx.message_id}_{ctx.session_id}",
+                            "value": {
+                                "session_id": ctx.session_id,
+                                "message_id": ctx.message_id,
+                                "role": ctx.role,
+                                "content": ctx.content,
+                                "timestamp": ctx.timestamp.isoformat(),
+                                "metadata": ctx.metadata or {}
+                            },
+                            "section": "conversation_context",
+                            "session_id": ctx.session_id
+                        }
+                        for ctx in contexts
+                    ]
+            except Exception as e:
+                logger.warning(f"Failed to get from short-term conversation context: {e}")
+        
+        # Fallback to long-term memory
+        results = await self.search("conversation_context", "", session_id)
+        
+        # Sort by timestamp (most recent first) and limit
+        results.sort(key=lambda x: x.get("value", {}).get("timestamp", ""), reverse=True)
+        return results[:limit]
+    
+    async def search_conversation_context(self, session_id: int, query: str) -> List[Dict[str, Any]]:
+        """
+        Search conversation context for specific content.
+        
+        Args:
+            session_id: Session identifier
+            query: Search query
+        
+        Returns:
+            List of matching conversation contexts
+        """
+        # Try short-term memory first
+        if self._short_term_memory:
+            try:
+                contexts = await self._short_term_memory.search_conversation_context(session_id, query)
+                if contexts:
+                    # Convert to the expected format
+                    return [
+                        {
+                            "key": f"{ctx.message_id}_{ctx.session_id}",
+                            "value": {
+                                "session_id": ctx.session_id,
+                                "message_id": ctx.message_id,
+                                "role": ctx.role,
+                                "content": ctx.content,
+                                "timestamp": ctx.timestamp.isoformat(),
+                                "metadata": ctx.metadata or {}
+                            },
+                            "section": "conversation_context",
+                            "session_id": ctx.session_id
+                        }
+                        for ctx in contexts
+                    ]
+            except Exception as e:
+                logger.warning(f"Failed to search short-term conversation context: {e}")
+        
+        # Fallback to long-term memory
+        return await self.search("conversation_context", query, session_id)
+    
     async def clear_section(self, section: str, session_id: Optional[int] = None) -> int:
         """
         Clear all entries in a section.
@@ -324,6 +484,13 @@ class MemoryManager:
         for key in keys:
             if await self.delete(section, key, session_id):
                 deleted_count += 1
+        
+        # Also clear from short-term memory if applicable
+        if section == "conversation_context" and session_id and self._short_term_memory:
+            try:
+                await self._short_term_memory.clear_session_context(session_id)
+            except Exception as e:
+                logger.warning(f"Failed to clear short-term session context: {e}")
         
         logger.info(f"Cleared {deleted_count} entries from section {section}")
         return deleted_count
@@ -345,6 +512,14 @@ class MemoryManager:
                 if section_name not in stats:
                     keys = await self.list_keys(section_name)
                     stats[section_name] = len(keys)
+        
+        # Add short-term memory stats
+        if self._short_term_memory:
+            try:
+                active_sessions = await self._short_term_memory.get_active_sessions()
+                stats["active_sessions"] = len(active_sessions)
+            except Exception as e:
+                logger.warning(f"Failed to get short-term memory stats: {e}")
         
         # Add cleanup info
         stats["cleanup_running"] = self._running

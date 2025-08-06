@@ -54,7 +54,7 @@ def setup_logger_with_env_control():
     Set up logging with environment variable control.
     
     Environment variables:
-    - NAGATHA_LOG_LEVEL_FILE: Log level for file logging (default: DEBUG)
+    - NAGATHA_LOG_LEVEL_FILE: Log level for file logging (default: INFO)
     - NAGATHA_LOG_LEVEL_CHAT: Log level for chat session display (default: WARNING)
     """
     logger = logging.getLogger("nagatha_assistant")
@@ -64,11 +64,11 @@ def setup_logger_with_env_control():
         return logger
     
     # Get log levels from environment
-    file_log_level = os.getenv("NAGATHA_LOG_LEVEL_FILE", "DEBUG").upper()
+    file_log_level = os.getenv("NAGATHA_LOG_LEVEL_FILE", "INFO").upper()
     chat_log_level = os.getenv("NAGATHA_LOG_LEVEL_CHAT", "WARNING").upper()
     
     # Convert string levels to logging constants
-    file_level = getattr(logging, file_log_level, logging.DEBUG)
+    file_level = getattr(logging, file_log_level, logging.INFO)
     chat_level = getattr(logging, chat_log_level, logging.WARNING)
     
     # Set base logger level to the most verbose of the two
@@ -90,6 +90,51 @@ def setup_logger_with_env_control():
     logger.chat_log_level = chat_level
     
     logger.info(f"Logger initialized - File level: {file_log_level}, Chat level: {chat_log_level}")
+    
+    return logger
+
+def get_logger(name: str = None) -> logging.Logger:
+    """
+    Get a logger instance with unified configuration.
+    
+    This is the preferred way to get loggers throughout the application.
+    It ensures consistent configuration and avoids duplicate handler setup.
+    
+    Args:
+        name: Logger name (defaults to calling module's __name__)
+        
+    Returns:
+        Configured logger instance
+    """
+    if name is None:
+        # Get the calling module's name
+        import inspect
+        frame = inspect.currentframe()
+        try:
+            # Go up one frame to get the caller's module
+            caller_frame = frame.f_back
+            name = caller_frame.f_globals.get('__name__', __name__)
+        finally:
+            # Clean up the frame reference
+            del frame
+    
+    logger = logging.getLogger(name)
+    
+    # If this is the first time getting this logger, ensure it's configured
+    if not logger.handlers and name != "nagatha_assistant":
+        # Use the main logger's configuration as a base
+        main_logger = logging.getLogger("nagatha_assistant")
+        if main_logger.handlers:
+            # Copy the main logger's level
+            logger.setLevel(main_logger.level)
+        else:
+            # Fall back to basic setup if main logger isn't configured
+            setup_logger_with_env_control()
+            logger.setLevel(logging.getLogger("nagatha_assistant").level)
+    
+    # Ensure the logger level is at least INFO to reduce debug noise
+    if logger.level < logging.INFO:
+        logger.setLevel(logging.INFO)
     
     return logger
 
