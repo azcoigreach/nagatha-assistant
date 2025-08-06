@@ -8,7 +8,7 @@ and conversation context preservation.
 
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch, call, PropertyMock
 from datetime import datetime
 import discord
 import pytest_asyncio
@@ -39,6 +39,9 @@ class MockDiscordMessage:
         # Mock guild
         self.guild = MagicMock()
         self.guild.id = guild_id
+        
+        # Mock Discord internal state
+        self._state = MagicMock()
 
 
 class TestDiscordMessageHandling:
@@ -69,11 +72,16 @@ class TestDiscordMessageHandling:
             command_prefix="!",
             intents=intents
         )
-        bot.user = MagicMock()
-        bot.user.id = 99999
-        bot.user.name = "TestBot"
         
-        return bot
+        # Mock the user property using PropertyMock
+        mock_user = MagicMock()
+        mock_user.id = 99999
+        mock_user.name = "TestBot"
+        
+        # Use PropertyMock to replace the user property
+        with patch.object(type(bot), 'user', new_callable=PropertyMock) as mock_user_prop:
+            mock_user_prop.return_value = mock_user
+            yield bot
     
     @pytest.mark.asyncio
     async def test_on_message_ignores_bot_messages(self, discord_bot):
@@ -161,7 +169,7 @@ class TestDiscordMessageHandling:
         mock_server = AsyncMock()
         mock_server.process_message.return_value = "It's sunny today!"
         
-        with patch('nagatha_assistant.plugins.discord_bot.get_unified_server', return_value=mock_server), \
+        with patch('nagatha_assistant.server.core_server.get_unified_server', return_value=mock_server), \
              patch('nagatha_assistant.plugins.discord_bot.update_auto_chat_usage') as mock_usage:
             
             await discord_bot._handle_auto_chat_message(message)
@@ -199,8 +207,8 @@ class TestDiscordMessageHandling:
         mock_server = AsyncMock()
         mock_server.process_message.side_effect = Exception("Server error")
         
-        with patch('nagatha_assistant.plugins.discord_bot.get_unified_server', return_value=mock_server), \
-             patch('nagatha_assistant.core.logger.get_logger') as mock_logger:
+        with patch('nagatha_assistant.server.core_server.get_unified_server', return_value=mock_server), \
+             patch('nagatha_assistant.utils.logger.get_logger') as mock_logger:
             
             await discord_bot._handle_auto_chat_message(message)
             
@@ -369,36 +377,41 @@ class TestDiscordIntegrationFlow:
         intents = discord.Intents.default()
         intents.message_content = True
         bot = NagathaDiscordBot(mock_plugin, command_prefix="!", intents=intents)
-        bot.user = MagicMock()
-        bot.user.id = 99999
         
-        # Create mock unified server
-        mock_server = AsyncMock()
-        mock_server.process_message.return_value = "I understand your message!"
+        # Mock the user property
+        mock_user = MagicMock()
+        mock_user.id = 99999
         
-        # Create test message
-        message = MockDiscordMessage(
-            content="Hello, can you help me?",
-            author_id=12345,
-            channel_id=67890
-        )
-        
-        with patch('nagatha_assistant.plugins.discord_bot.is_auto_chat_enabled', return_value=True), \
-             patch('nagatha_assistant.plugins.discord_bot.should_rate_limit', return_value=False), \
-             patch('nagatha_assistant.plugins.discord_bot.update_auto_chat_usage'), \
-             patch('nagatha_assistant.plugins.discord_bot.get_unified_server', return_value=mock_server):
+        with patch.object(type(bot), 'user', new_callable=PropertyMock) as mock_user_prop:
+            mock_user_prop.return_value = mock_user
             
-            # Process the message
-            await bot.on_message(message)
+            # Create mock unified server
+            mock_server = AsyncMock()
+            mock_server.process_message.return_value = "I understand your message!"
             
-            # Verify the complete flow
-            mock_server.process_message.assert_called_once()
-            call_args = mock_server.process_message.call_args
+            # Create test message
+            message = MockDiscordMessage(
+                content="Hello, can you help me?",
+                author_id=12345,
+                channel_id=67890
+            )
             
-            assert call_args[1]['message'] == "Hello, can you help me?"
-            assert call_args[1]['user_id'] == "discord:12345"
-            assert call_args[1]['interface'] == "discord"
-            assert call_args[1]['interface_context']['channel_id'] == "67890"
-            
-            # Verify response was sent
-            message.channel.send.assert_called_once_with("I understand your message!")
+            with patch('nagatha_assistant.plugins.discord_bot.is_auto_chat_enabled', return_value=True), \
+                 patch('nagatha_assistant.plugins.discord_bot.should_rate_limit', return_value=False), \
+                 patch('nagatha_assistant.plugins.discord_bot.update_auto_chat_usage'), \
+                 patch('nagatha_assistant.server.core_server.get_unified_server', return_value=mock_server):
+                
+                # Process the message
+                await bot.on_message(message)
+                
+                # Verify the complete flow
+                mock_server.process_message.assert_called_once()
+                call_args = mock_server.process_message.call_args
+                
+                assert call_args[1]['message'] == "Hello, can you help me?"
+                assert call_args[1]['user_id'] == "discord:12345"
+                assert call_args[1]['interface'] == "discord"
+                assert call_args[1]['interface_context']['channel_id'] == "67890"
+                
+                # Verify response was sent
+                message.channel.send.assert_called_once_with("I understand your message!")
