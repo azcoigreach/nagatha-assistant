@@ -18,6 +18,8 @@ from nagatha_assistant.core.plugin import SimplePlugin, PluginConfig, PluginComm
 from nagatha_assistant.core.event import Event, StandardEventTypes, create_system_event
 from nagatha_assistant.core.slash_command_manager import SlashCommandManager
 from nagatha_assistant.core.slash_commands import ChatSlashCommand, StatusSlashCommand, HelpSlashCommand
+from nagatha_assistant.core.voice_commands import JoinVoiceSlashCommand, LeaveVoiceSlashCommand, VoiceStatusSlashCommand, SpeakSlashCommand
+from nagatha_assistant.core.voice_handler import VoiceHandler
 from nagatha_assistant.utils.logger import setup_logger_with_env_control, get_logger
 from nagatha_assistant.db_models import DiscordAutoChat
 from nagatha_assistant.db import SessionLocal
@@ -227,6 +229,88 @@ class NagathaDiscordBot(commands.Bot):
         )
         await self.discord_plugin.publish_event(event)
     
+    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+        """
+        Handle voice state updates (users joining/leaving voice channels).
+        
+        This allows Nagatha to respond to voice channel activity and
+        potentially handle voice conversations.
+        """
+        # Don't respond to our own voice state changes
+        if member == self.user:
+            return
+        
+        # Check if this affects a voice channel we're in
+        if hasattr(self.discord_plugin, 'voice_handler') and self.discord_plugin.voice_handler:
+            voice_handler = self.discord_plugin.voice_handler
+            
+            # Check if we're in the same voice channel
+            if before.channel and voice_handler.voice_clients.get(member.guild.id):
+                our_channel = voice_handler.voice_clients[member.guild.id].channel
+                if before.channel.id == our_channel.id:
+                    # User left our voice channel
+                    logger.info(f"User {member.name} left voice channel {before.channel.name}")
+                    
+                    # If we're the only one left, consider leaving
+                    if len(before.channel.members) <= 1:  # Only us or empty
+                        logger.info("Voice channel is empty, considering leaving")
+                        # You could add logic here to auto-leave after a delay
+                
+                elif after.channel and after.channel.id == our_channel.id:
+                    # User joined our voice channel
+                    logger.info(f"User {member.name} joined voice channel {after.channel.name}")
+                    
+                    # Welcome message or other interaction
+                    if len(after.channel.members) == 2:  # Just us and the new user
+                        logger.info("First user joined our voice channel")
+            
+            # Handle voice activity
+            if hasattr(voice_handler, 'voice_listener'):
+                # Check if user is speaking (not muted and not deafened)
+                speaking = after.self_mute is False and after.self_deaf is False
+                await voice_handler.handle_voice_activity(member.id, speaking, member.guild.id)
+        
+        # Publish voice state event for other systems
+        event = create_system_event(
+            "discord.voice.state_update",
+            {
+                "member_id": member.id,
+                "member_name": member.name,
+                "guild_id": member.guild.id if member.guild else None,
+                "before_channel_id": before.channel.id if before.channel else None,
+                "before_channel_name": before.channel.name if before.channel else None,
+                "after_channel_id": after.channel.id if after.channel else None,
+                "after_channel_name": after.channel.name if after.channel else None,
+                "action": "joined" if not before.channel and after.channel else "left" if before.channel and not after.channel else "moved"
+            },
+            source="discord_bot_plugin"
+        )
+        await self.discord_plugin.publish_event(event)
+    
+    async def on_voice_packet(self, user_id: int, data: bytes):
+        """Handle incoming voice packets from users."""
+        try:
+            if hasattr(self.discord_plugin, 'voice_handler') and self.discord_plugin.voice_handler:
+                voice_handler = self.discord_plugin.voice_handler
+                
+                # Find the guild ID for this user
+                guild_id = None
+                for gid, voice_client in voice_handler.voice_clients.items():
+                    if voice_client.channel:
+                        # Check if user is in this voice channel
+                        for member in voice_client.channel.members:
+                            if member.id == user_id:
+                                guild_id = gid
+                                break
+                        if guild_id:
+                            break
+                
+                if guild_id:
+                    await voice_handler.handle_voice_packet(user_id, data, guild_id)
+                    
+        except Exception as e:
+            logger.error(f"Error handling voice packet: {e}")
+    
     async def on_message(self, message: discord.Message):
         """
         Handle incoming Discord messages.
@@ -316,6 +400,12 @@ class NagathaDiscordBot(commands.Bot):
             # Send response to Discord
             await self._send_long_message(message.channel, response)
             
+            # Speak the response in voice channel if linked
+            if hasattr(self.discord_plugin, 'voice_handler') and self.discord_plugin.voice_handler:
+                await self.discord_plugin.voice_handler.speak_text_channel_response(
+                    str(message.channel.id), response
+                )
+            
             logger.info(f"Auto-chat response sent in channel {message.channel.id}")
             
         except Exception as e:
@@ -397,6 +487,9 @@ class DiscordBotPlugin(SimplePlugin):
         # Slash command management
         self.slash_command_manager: Optional[SlashCommandManager] = None
         
+        # Voice handler
+        self.voice_handler: Optional[VoiceHandler] = None
+        
     async def setup(self) -> None:
         """Setup the Discord bot plugin by registering commands and handlers."""
         
@@ -437,12 +530,30 @@ class DiscordBotPlugin(SimplePlugin):
             }
         )
         
+        sync_command = PluginCommand(
+            name="discord_sync",
+            description="Sync Discord slash commands",
+            handler=self.sync_discord_commands,
+            plugin_name=self.name,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "guild_id": {
+                        "type": "string",
+                        "description": "Guild ID to sync to (optional, syncs globally if not provided)"
+                    }
+                },
+                "required": []
+            }
+        )
+        
         # Register with the plugin manager
         from nagatha_assistant.core.plugin_manager import get_plugin_manager
         plugin_manager = get_plugin_manager()
         plugin_manager.register_command(start_command)
         plugin_manager.register_command(stop_command)
         plugin_manager.register_command(status_command)
+        plugin_manager.register_command(sync_command)
         
         # Subscribe to system events
         self.subscribe_to_events(
@@ -486,6 +597,9 @@ class DiscordBotPlugin(SimplePlugin):
             # Configure Discord intents
             intents = discord.Intents.default()
             intents.message_content = True  # Required for message content access
+            intents.voice_states = True  # Required for voice channel events
+            intents.guilds = True  # Required for guild information
+            intents.members = True  # Required for voice features
             logger.debug("Discord intents configured")
             
             # Create bot instance
@@ -500,6 +614,10 @@ class DiscordBotPlugin(SimplePlugin):
             # Initialize slash command manager
             self.slash_command_manager = SlashCommandManager(self.bot)
             logger.debug("Slash command manager initialized")
+            
+            # Initialize voice handler
+            self.voice_handler = VoiceHandler(self)
+            logger.debug("Voice handler initialized")
             
             # Register core slash commands
             # await self._register_core_slash_commands()
@@ -603,6 +721,47 @@ class DiscordBotPlugin(SimplePlugin):
         else:
             return "Discord bot: Starting..."
     
+    async def sync_discord_commands(self, **kwargs) -> str:
+        """
+        Sync Discord slash commands.
+        
+        Args:
+            guild_id (optional): Guild ID to sync to. If not provided, syncs globally.
+            
+        Returns:
+            Status message about the sync operation
+        """
+        if not self.is_running:
+            return "Discord bot is not running. Start it first with `discord_start`."
+        
+        if not self.bot:
+            return "Discord bot not initialized. Please start the bot first."
+        
+        try:
+            guild_id = kwargs.get('guild_id')
+            
+            # Convert guild_id to int if provided
+            guild_id_int = None
+            if guild_id:
+                try:
+                    guild_id_int = int(guild_id)
+                except ValueError:
+                    return f"Invalid guild ID: {guild_id}. Must be a number."
+            
+            # Sync commands
+            synced_count = await self.sync_slash_commands(guild_id_int)
+            
+            if guild_id_int:
+                guild = self.bot.get_guild(guild_id_int)
+                guild_name = guild.name if guild else f"Guild {guild_id_int}"
+                return f"✅ Synced {synced_count} slash commands to guild: {guild_name}"
+            else:
+                return f"✅ Synced {synced_count} slash commands globally"
+                
+        except Exception as e:
+            logger.error(f"Error syncing Discord commands: {e}")
+            return f"❌ Error syncing commands: {str(e)}"
+    
     async def _register_core_slash_commands(self) -> None:
         """Register core slash commands using the SlashCommandManager."""
         if not self.slash_command_manager:
@@ -614,7 +773,11 @@ class DiscordBotPlugin(SimplePlugin):
             core_commands = [
                 ChatSlashCommand(),
                 StatusSlashCommand(),
-                HelpSlashCommand()
+                HelpSlashCommand(),
+                JoinVoiceSlashCommand(),
+                LeaveVoiceSlashCommand(),
+                VoiceStatusSlashCommand(),
+                SpeakSlashCommand()
             ]
             
             for command in core_commands:
@@ -667,12 +830,45 @@ class DiscordBotPlugin(SimplePlugin):
             async def auto_chat_command(interaction: discord.Interaction, action: str):
                 await self._handle_auto_chat_command(interaction, action)
             
+            # Voice commands
+            @app_commands.command(name="join", description="Join a voice channel and start voice conversation with Nagatha")
+            @app_commands.describe(
+                channel="Voice channel to join (optional - will join your current channel)"
+            )
+            async def join_command(interaction: discord.Interaction, channel: discord.VoiceChannel = None):
+                await self._handle_join_voice_command(interaction, channel)
+            
+            @app_commands.command(name="leave", description="Leave the current voice channel")
+            async def leave_command(interaction: discord.Interaction):
+                await self._handle_leave_voice_command(interaction)
+            
+            @app_commands.command(name="voice-status", description="Check voice channel status and capabilities")
+            async def voice_status_command(interaction: discord.Interaction):
+                await self._handle_voice_status_command(interaction)
+            
+            @app_commands.command(name="speak", description="Make Nagatha speak a message in the current voice channel")
+            @app_commands.describe(
+                message="Message for Nagatha to speak"
+            )
+            async def speak_command(interaction: discord.Interaction, message: str):
+                await self._handle_speak_command(interaction, message)
+            
+            # Sync command
+            @app_commands.command(name="sync", description="Sync slash commands (admin only)")
+            async def sync_command(interaction: discord.Interaction):
+                await self._handle_sync_command(interaction)
+            
             # Register commands with the bot tree
             logger.info("Adding commands to bot tree...")
             self.bot.tree.add_command(chat_command)
             self.bot.tree.add_command(status_command)
             self.bot.tree.add_command(help_command)
             self.bot.tree.add_command(auto_chat_command)
+            self.bot.tree.add_command(join_command)
+            self.bot.tree.add_command(leave_command)
+            self.bot.tree.add_command(voice_status_command)
+            self.bot.tree.add_command(speak_command)
+            self.bot.tree.add_command(sync_command)
             
             # Verify commands were added
             registered_commands = [cmd.name for cmd in self.bot.tree.get_commands()]
@@ -710,6 +906,12 @@ class DiscordBotPlugin(SimplePlugin):
                     await interaction.followup.send(chunk)
             else:
                 await interaction.followup.send(response)
+            
+            # Speak the response in voice channel if linked (only for non-private responses)
+            if not private and hasattr(self.discord_plugin, 'voice_handler') and self.discord_plugin.voice_handler:
+                await self.discord_plugin.voice_handler.speak_text_channel_response(
+                    str(interaction.channel_id), response
+                )
                 
         except Exception as e:
             logger.exception(f"Error in chat command: {e}")
@@ -801,7 +1003,14 @@ class DiscordBotPlugin(SimplePlugin):
             response += "• `/chat <message> [private]` - Chat with Nagatha AI assistant\n"
             response += "• `/auto-chat <on|off|status>` - Enable/disable auto-chat mode for this channel\n"
             response += "• `/status` - Get system status and plugin information\n" 
-            response += "• `/help` - Show this help message\n\n"
+            response += "• `/help` - Show this help message\n"
+            response += "• `/sync` - Sync slash commands (admin only)\n\n"
+            
+            response += "**Voice Commands:**\n"
+            response += "• `/join [channel]` - Join a voice channel and link to this text channel\n"
+            response += "• `/leave` - Leave the current voice channel\n"
+            response += "• `/voice-status` - Check voice capabilities and status\n"
+            response += "• `/speak <message>` - Make Nagatha speak a message\n\n"
             
             response += "**Legacy Prefix Commands:**\n"
             response += f"• `{self.command_prefix}ping` - Test bot connectivity\n"
@@ -810,8 +1019,9 @@ class DiscordBotPlugin(SimplePlugin):
             response += "**Getting Started:**\n"
             response += "1. Use `/chat` to have conversations with Nagatha\n"
             response += "2. Use `/auto-chat on` to enable automatic responses in this channel\n"
-            response += "3. Check `/status` to see what tools and plugins are available\n"
-            response += "4. Nagatha can help with notes, tasks, web research, and more!\n\n"
+            response += "3. Use `/join` to link voice channel to this text channel for voice responses\n"
+            response += "4. Check `/status` to see what tools and plugins are available\n"
+            response += "5. Nagatha can help with notes, tasks, web research, and more!\n\n"
             
             response += "*More commands may be available from other plugins and MCP servers.*"
             
@@ -924,6 +1134,197 @@ class DiscordBotPlugin(SimplePlugin):
                     )
             except Exception as send_error:
                 logger.error(f"Failed to send error message: {send_error}")
+    
+    async def _handle_join_voice_command(self, interaction: discord.Interaction, channel: discord.VoiceChannel = None):
+        """Handle the /join voice command."""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            if not self.voice_handler:
+                await interaction.followup.send("❌ Voice functionality not available")
+                return
+            
+            # Get voice channel
+            voice_channel = channel
+            if not voice_channel:
+                # Check if user is in a voice channel
+                if not interaction.user.voice:
+                    await interaction.followup.send(
+                        "❌ You need to be in a voice channel or specify one to join. "
+                        "Please join a voice channel first, or specify a channel with `/join #channel-name`"
+                    )
+                    return
+                voice_channel = interaction.user.voice.channel
+            
+            # Verify it's a voice channel
+            if not isinstance(voice_channel, discord.VoiceChannel):
+                await interaction.followup.send("❌ Please specify a voice channel")
+                return
+            
+            # Check permissions
+            if not voice_channel.permissions_for(interaction.guild.me).connect:
+                await interaction.followup.send("❌ I don't have permission to join that voice channel")
+                return
+            
+            # Join the voice channel and link to the text channel where the command was issued
+            text_channel_id = str(interaction.channel_id)
+            success = await self.voice_handler.join_voice_channel(
+                voice_channel, interaction.guild.id, text_channel_id
+            )
+            
+            if success:
+                # Start voice listening
+                await self.voice_handler.start_voice_listening(interaction.guild.id)
+                
+                await interaction.followup.send(
+                    f"🎤 **Joined voice channel:** {voice_channel.name}\n\n"
+                    f"I'm now linked to this text channel and will speak my responses here in the voice channel. "
+                    f"Just type your messages and I'll respond with both text and voice! "
+                    f"Use `/leave` when you're done."
+                )
+            else:
+                await interaction.followup.send("❌ Failed to join voice channel. Please try again.")
+                
+        except Exception as e:
+            logger.exception(f"Error in join voice command: {e}")
+            await interaction.followup.send(f"❌ Error joining voice channel: {str(e)}")
+    
+    async def _handle_leave_voice_command(self, interaction: discord.Interaction):
+        """Handle the /leave voice command."""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            if not self.voice_handler:
+                await interaction.followup.send("❌ Voice functionality not available")
+                return
+            
+            # Check if we're in a voice channel
+            is_connected = await self.voice_handler.is_in_voice_channel(interaction.guild.id)
+            
+            if not is_connected:
+                await interaction.followup.send("❌ I'm not currently in a voice channel")
+                return
+            
+            # Leave the voice channel
+            success = await self.voice_handler.leave_voice_channel(interaction.guild.id)
+            
+            if success:
+                await interaction.followup.send("👋 **Left voice channel**\n\nThanks for the conversation!")
+            else:
+                await interaction.followup.send("❌ Failed to leave voice channel. Please try again.")
+                
+        except Exception as e:
+            logger.exception(f"Error in leave voice command: {e}")
+            await interaction.followup.send(f"❌ Error leaving voice channel: {str(e)}")
+    
+    async def _handle_voice_status_command(self, interaction: discord.Interaction):
+        """Handle the /voice-status command."""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            if not self.voice_handler:
+                await interaction.followup.send("❌ Voice functionality not available")
+                return
+            
+            # Get voice status
+            status = await self.voice_handler.get_voice_status(interaction.guild.id)
+            
+            # Build status message
+            response = "🎤 **Voice Status**\n\n"
+            
+            if status['is_connected']:
+                channel_info = status['channel_info']
+                response += f"**Connected to:** {channel_info['channel_name']}\n"
+                response += f"**Members:** {channel_info['member_count']}\n"
+                response += f"**Conversations:** {status['conversation_count']}\n"
+                
+                # Show linked text channel info
+                if channel_info.get('text_channel_id'):
+                    response += f"**Linked Text Channel:** <#{channel_info['text_channel_id']}>\n"
+                    response += "**Mode:** Text-to-Voice (speaking text responses)\n"
+                else:
+                    response += "**Mode:** Voice-to-Voice (listening for speech)\n"
+            else:
+                response += "**Status:** Not connected to any voice channel\n"
+            
+            response += "\n**Capabilities:**\n"
+            response += f"• Speech-to-Text: {'✅' if status['whisper_available'] else '❌'}\n"
+            response += f"• Text-to-Speech: {'✅' if status['tts_available'] else '❌'}\n"
+            
+            response += "\n**Commands:**\n"
+            response += "• `/join` - Join a voice channel\n"
+            response += "• `/leave` - Leave current voice channel\n"
+            response += "• `/voice-status` - Show this status\n"
+            
+            await interaction.followup.send(response)
+                
+        except Exception as e:
+            logger.exception(f"Error in voice status command: {e}")
+            await interaction.followup.send(f"❌ Error getting voice status: {str(e)}")
+    
+    async def _handle_speak_command(self, interaction: discord.Interaction, message: str):
+        """Handle the /speak command."""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            if not self.voice_handler:
+                await interaction.followup.send("❌ Voice functionality not available")
+                return
+            
+            # Check if we're in a voice channel
+            is_connected = await self.voice_handler.is_in_voice_channel(interaction.guild.id)
+            
+            if not is_connected:
+                await interaction.followup.send("❌ I need to be in a voice channel first. Use `/join` to join a voice channel.")
+                return
+            
+            # Make Nagatha speak
+            success = await self.voice_handler.speak_in_voice_channel(
+                message, interaction.guild.id
+            )
+            
+            if success:
+                await interaction.followup.send(f"🗣️ **Speaking:** {message}")
+            else:
+                await interaction.followup.send("❌ Failed to speak the message. Please try again.")
+                
+        except Exception as e:
+            logger.exception(f"Error in speak command: {e}")
+            await interaction.followup.send(f"❌ Error speaking message: {str(e)}")
+    
+    async def _handle_sync_command(self, interaction: discord.Interaction):
+        """Handle the /sync slash command."""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            # Check if user has admin permissions
+            if interaction.guild and not interaction.user.guild_permissions.administrator:
+                await interaction.followup.send(
+                    "❌ You need administrator permissions to sync slash commands.",
+                    ephemeral=True
+                )
+                return
+            
+            # Sync commands
+            synced_count = await self.sync_slash_commands(interaction.guild.id if interaction.guild else None)
+            
+            if interaction.guild:
+                await interaction.followup.send(
+                    f"✅ Synced {synced_count} slash commands to this server!",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    f"✅ Synced {synced_count} slash commands globally!",
+                    ephemeral=True
+                )
+                
+        except Exception as e:
+            logger.exception(f"Error in sync command: {e}")
+            await interaction.followup.send(
+                f"❌ Error syncing commands: {str(e)}",
+                ephemeral=True
+            )
     
     def add_slash_command(self, name: str, description: str, handler: callable, **kwargs) -> bool:
         """
