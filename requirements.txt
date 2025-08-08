@@ -16,3 +16,6 @@ celery
 redis
 flower
 parsedatetime
+PyNaCl
+ffmpeg-python
+openai-whisper

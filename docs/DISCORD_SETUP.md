@@ -24,8 +24,8 @@ This guide will help you set up the Discord bot integration for Nagatha Assistan
 3. Confirm by clicking "Yes, do it!"
 4. **Important**: Under "Privileged Gateway Intents", enable:
    - **Message Content Intent** (required for the bot to read message content)
-   - Server Members Intent (optional, for advanced features)
-   - Presence Intent (optional, for status features)
+   - **Server Members Intent** (required for voice features)
+   - **Presence Intent** (optional, for status features)
 
 ### 3. Get Your Bot Token
 
@@ -60,6 +60,10 @@ To find your Guild ID:
    - Read Message History
    - View Channels
    - Use Slash Commands
+   - **Connect** (required for voice features)
+   - **Speak** (required for voice features)
+   - **Use Voice Activity** (required for voice features)
+   - **Priority Speaker** (optional, for voice features)
    - Add additional permissions as needed
 4. Copy the generated URL and open it in your browser
 5. Select your server and authorize the bot
@@ -224,6 +228,30 @@ spec:
    - Check that commands were synced successfully
    - Verify the bot is in the correct guild (if using guild-specific commands)
 
+### Syncing Commands
+
+If slash commands don't appear or you've added new commands, you can sync them:
+
+**From Discord (Admin only):**
+```
+/sync
+```
+
+**From CLI (provides guidance):**
+```bash
+nagatha discord sync
+```
+
+**With specific guild ID:**
+```bash
+nagatha discord sync --guild-id 123456789
+```
+
+**Note:** Commands are automatically synced when the bot starts. If you've added new commands, restart the bot:
+```bash
+nagatha discord stop && nagatha discord start
+```
+
 ### Debug Mode
 
 Enable debug logging to troubleshoot issues:
@@ -276,12 +304,28 @@ The Discord bot is built with a modular architecture:
 - **MCP Tools**: Commands can leverage any available MCP server tools
 - **Plugin APIs**: Rich APIs for plugin integration
 
+## Voice Features
+
+Nagatha now supports voice interactions! See [Voice Features Documentation](VOICE_FEATURES.md) for complete details.
+
+### Voice Capabilities
+- **Voice Channel Integration**: Join and leave voice channels with slash commands
+- **Speech-to-Text**: Convert voice to text using OpenAI Whisper
+- **Text-to-Speech**: Speak responses using OpenAI TTS with warm, professional voice
+- **Mixed Interactions**: Voice conversations with text responses for URLs/images
+- **Conversation Memory**: Maintain context across voice sessions
+
+### Quick Start
+1. Install voice dependencies: `pip install PyNaCl ffmpeg-python openai-whisper`
+2. Set up FFmpeg and OpenAI API key
+3. Use `/join` to start voice conversation
+4. Speak naturally - Nagatha will listen and respond!
+
 ## Future Features
 
 The Discord bot foundation is designed to support future enhancements:
 
 - **Advanced AI Integration**: Deeper integration with Nagatha's conversation system
-- **Voice Channel Support**: Voice interaction capabilities
 - **Scheduled Messages**: Automated reminders and notifications
 - **Server Moderation**: Advanced moderation features
 - **Custom Command Creation**: User-defined commands

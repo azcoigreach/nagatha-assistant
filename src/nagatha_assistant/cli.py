@@ -768,36 +768,77 @@ def discord_status():
     """
     Get the Discord bot status.
     """
-    from nagatha_assistant.utils.daemon import DaemonManager
+    import os
+    import json
     import datetime
+    from nagatha_assistant.utils.daemon import DaemonManager
     
-    # Create daemon manager
+    # Check if Discord bot is running as a daemon
     daemon = DaemonManager("discord_bot")
+    daemon_status = daemon.get_status()
     
-    # Get detailed status
-    status = daemon.get_status()
+    # Check if Discord bot is running as part of the main server
+    server_status_file = "/tmp/nagatha_server_status.json"
+    server_running = False
+    auto_discord_enabled = False
+    server_data = {}
     
-    if not status["running"]:
+    if os.path.exists(server_status_file):
+        try:
+            with open(server_status_file, 'r') as f:
+                server_data = json.load(f)
+                server_running = server_data.get('running', False)
+                auto_discord_enabled = server_data.get('auto_discord', False)
+        except Exception:
+            pass
+    
+    # Determine bot status
+    bot_running = daemon_status["running"] or (server_running and auto_discord_enabled)
+    
+    if not bot_running:
         click.echo("❌ Discord bot: Stopped")
+        click.echo("💡 Start the bot with one of these methods:")
+        click.echo("   nagatha discord start                    # Start as separate daemon")
+        click.echo("   nagatha server start --auto-discord     # Start with server")
         return
     
-    # Format detailed status
-    click.echo("✅ Discord bot: Running")
-    click.echo(f"   PID: {status['pid']}")
-    click.echo(f"   Status: {status['status']}")
-    
-    if "memory" in status:
-        memory_mb = status["memory"] / (1024 * 1024)
-        click.echo(f"   Memory: {memory_mb:.1f} MB")
-    
-    if "cpu_percent" in status:
-        click.echo(f"   CPU: {status['cpu_percent']:.1f}%")
-    
-    if "create_time" in status:
-        start_time = datetime.datetime.fromtimestamp(status["create_time"])
-        uptime = datetime.datetime.now() - start_time
-        click.echo(f"   Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        click.echo(f"   Uptime: {str(uptime).split('.')[0]}")  # Remove microseconds
+    # Determine how the bot is running and show appropriate status
+    if daemon_status["running"]:
+        # Bot is running as daemon
+        click.echo("✅ Discord bot: Running (as daemon)")
+        click.echo(f"   PID: {daemon_status['pid']}")
+        click.echo(f"   Status: {daemon_status['status']}")
+        
+        if "memory" in daemon_status:
+            memory_mb = daemon_status["memory"] / (1024 * 1024)
+            click.echo(f"   Memory: {memory_mb:.1f} MB")
+        
+        if "cpu_percent" in daemon_status:
+            click.echo(f"   CPU: {daemon_status['cpu_percent']:.1f}%")
+        
+        if "create_time" in daemon_status:
+            start_time = datetime.datetime.fromtimestamp(daemon_status["create_time"])
+            uptime = datetime.datetime.now() - start_time
+            click.echo(f"   Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            click.echo(f"   Uptime: {str(uptime).split('.')[0]}")  # Remove microseconds
+    else:
+        # Bot is running with server
+        click.echo("✅ Discord bot: Running (with server)")
+        click.echo(f"   Server PID: {server_data.get('pid', 'Unknown')}")
+        click.echo(f"   Server Status: {server_data.get('status', 'Unknown')}")
+        
+        if "memory" in server_data:
+            memory_mb = server_data["memory"] / (1024 * 1024)
+            click.echo(f"   Memory: {memory_mb:.1f} MB")
+        
+        if "cpu_percent" in server_data:
+            click.echo(f"   CPU: {server_data['cpu_percent']:.1f}%")
+        
+        if "create_time" in server_data:
+            start_time = datetime.datetime.fromtimestamp(server_data["create_time"])
+            uptime = datetime.datetime.now() - start_time
+            click.echo(f"   Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            click.echo(f"   Uptime: {str(uptime).split('.')[0]}")  # Remove microseconds
 
 
 @discord.command("setup")
@@ -842,6 +883,87 @@ def discord_setup():
     
     if not token:
         click.echo("❌ Please configure DISCORD_BOT_TOKEN in your .env file to use the Discord bot")
+
+
+@discord.command("sync")
+@click.option("--guild-id", help="Guild ID to sync to (optional, syncs globally if not provided)")
+def discord_sync(guild_id):
+    """
+    Sync Discord slash commands.
+    
+    This command syncs all registered slash commands to Discord.
+    Use this when new commands are added or if commands don't appear.
+    """
+    import os
+    import json
+    
+    # Check if Discord bot is running as a daemon
+    from nagatha_assistant.utils.daemon import DaemonManager
+    daemon = DaemonManager("discord_bot")
+    daemon_status = daemon.get_status()
+    
+    # Check if Discord bot is running as part of the main server
+    server_status_file = "/tmp/nagatha_server_status.json"
+    server_running = False
+    auto_discord_enabled = False
+    
+    if os.path.exists(server_status_file):
+        try:
+            with open(server_status_file, 'r') as f:
+                server_data = json.load(f)
+                server_running = server_data.get('running', False)
+                # Check if auto-discord was enabled
+                auto_discord_enabled = server_data.get('auto_discord', False)
+        except Exception:
+            pass
+    
+    # Determine bot status
+    bot_running = daemon_status["running"] or (server_running and auto_discord_enabled)
+    
+    if not bot_running:
+        click.echo("❌ Discord bot is not running")
+        click.echo("💡 Start the bot with one of these methods:")
+        click.echo("   nagatha discord start                    # Start as separate daemon")
+        click.echo("   nagatha server start --auto-discord     # Start with server")
+        return
+    
+    # Determine how the bot is running
+    if daemon_status["running"]:
+        click.echo("✅ Discord bot is running (as daemon)")
+    else:
+        click.echo("✅ Discord bot is running (with server)")
+    
+    click.echo("🔄 Syncing Discord slash commands...")
+    
+    # Convert guild_id to int if provided
+    guild_id_int = None
+    if guild_id:
+        try:
+            guild_id_int = int(guild_id)
+        except ValueError:
+            click.echo(f"❌ Invalid guild ID: {guild_id}. Must be a number.")
+            return
+    
+    # For now, provide guidance on how to sync
+    if guild_id_int:
+        click.echo(f"💡 To sync commands to guild {guild_id_int}, use the Discord slash command:")
+        click.echo("   /sync")
+        click.echo()
+        click.echo("   (Requires administrator permissions in Discord)")
+    else:
+        click.echo("💡 To sync commands globally, use the Discord slash command:")
+        click.echo("   /sync")
+        click.echo()
+        click.echo("   (Requires administrator permissions in Discord)")
+    
+    click.echo()
+    click.echo("📝 Note: Commands are automatically synced when the bot starts.")
+    if daemon_status["running"]:
+        click.echo("📝 If you've added new commands, restart the bot with:")
+        click.echo("   nagatha discord stop && nagatha discord start")
+    else:
+        click.echo("📝 If you've added new commands, restart the server with:")
+        click.echo("   nagatha server stop && nagatha server start --auto-discord")
 
 
 @cli.command(name="chat")

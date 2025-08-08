@@ -122,7 +122,8 @@ class NagathaUnifiedServer:
                 "start_time": self._start_time.isoformat(),
                 "port": self.config.port,
                 "host": self.config.host,
-                "pid": os.getpid()
+                "pid": os.getpid(),
+                "auto_discord": self.config.auto_discord
             }
             with open(status_file, 'w') as f:
                 json.dump(status_data, f)
