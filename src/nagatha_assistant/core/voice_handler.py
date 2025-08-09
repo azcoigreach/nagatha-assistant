@@ -34,7 +34,8 @@ class VoiceListener:
     def __init__(self, voice_handler):
         self.voice_handler = voice_handler
         self.listening_guilds: Dict[int, bool] = {}
-        self.audio_buffers: Dict[int, List[bytes]] = {}
+        # Store buffered PCM audio per (guild_id, user_id)
+        self.audio_buffers: Dict[tuple[int, int], List[bytes]] = {}
         self.speaking_users: Dict[int, bool] = {}
         
     async def start_listening(self, guild_id: int):
@@ -77,17 +78,35 @@ class VoiceListener:
         except Exception as e:
             logger.error(f"Error handling voice activity: {e}")
     
-    async def _process_user_audio(self, user_id: int, guild_id: int):
-        """Process audio from a user (placeholder for now)."""
+    async def handle_voice_packet(self, user_id: int, guild_id: int, data: bytes):
+        """Buffer raw PCM packets from Discord."""
         try:
-            logger.info(f"Processing audio from user {user_id} in guild {guild_id}")
-            # For now, just log that we detected speech
-            # In a full implementation, we would:
-            # 1. Capture audio packets
-            # 2. Convert to text using Whisper
-            # 3. Get AI response
-            # 4. Speak the response
-            
+            if guild_id not in self.listening_guilds or not self.listening_guilds[guild_id]:
+                return
+            key = (guild_id, user_id)
+            self.audio_buffers.setdefault(key, []).append(data)
+        except Exception as e:
+            logger.error(f"Error buffering voice packet: {e}")
+
+    async def _process_user_audio(self, user_id: int, guild_id: int):
+        """Transcribe buffered audio and generate a spoken response."""
+        try:
+            key = (guild_id, user_id)
+            if key not in self.audio_buffers or not self.audio_buffers[key]:
+                return
+
+            audio_data = b"".join(self.audio_buffers[key])
+            # Clear buffer after reading
+            self.audio_buffers[key] = []
+
+            # Generate response from audio
+            response = await self.voice_handler.handle_voice_message(
+                audio_data, user_id, guild_id
+            )
+
+            if response:
+                await self.voice_handler.speak_in_voice_channel(response, guild_id)
+
         except Exception as e:
             logger.error(f"Error processing user audio: {e}")
 
@@ -215,6 +234,10 @@ class VoiceHandler:
     async def handle_voice_activity(self, user_id: int, guild_id: int, speaking: bool):
         """Handle voice activity from a user."""
         await self.voice_listener.handle_voice_activity(user_id, guild_id, speaking)
+
+    async def handle_voice_packet(self, user_id: int, data: bytes, guild_id: int):
+        """Forward raw voice data to the listener for buffering."""
+        await self.voice_listener.handle_voice_packet(user_id, guild_id, data)
     
     async def leave_voice_channel(self, guild_id: int) -> bool:
         """
