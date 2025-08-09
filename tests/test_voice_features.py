@@ -442,13 +442,32 @@ class TestTextToVoiceFeatures:
         
         # Mock speak method
         voice_handler.speak_in_voice_channel = AsyncMock(return_value=True)
-        
+
         # Test speaking a response
         response_text = "This is a test response"
         result = await voice_handler.speak_text_channel_response(text_channel_id, response_text)
-        
+
         assert result is True
         voice_handler.speak_in_voice_channel.assert_called_once_with(response_text, guild_id)
+
+    @pytest.mark.asyncio
+    async def test_voice_packet_processing(self, voice_handler):
+        """Test that buffered voice packets are transcribed and spoken."""
+        guild_id = 1
+        user_id = 2
+
+        await voice_handler.start_voice_listening(guild_id)
+
+        voice_handler.handle_voice_message = AsyncMock(return_value="hi there")
+        voice_handler.speak_in_voice_channel = AsyncMock(return_value=True)
+
+        # Simulate speaking event with buffered audio
+        await voice_handler.handle_voice_activity(user_id, guild_id, True)
+        await voice_handler.handle_voice_packet(user_id, b"audio-bytes", guild_id)
+        await voice_handler.handle_voice_activity(user_id, guild_id, False)
+
+        voice_handler.handle_voice_message.assert_awaited_once()
+        voice_handler.speak_in_voice_channel.assert_awaited_once_with("hi there", guild_id)
 
 
 if __name__ == "__main__":
